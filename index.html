@@ -11,17 +11,20 @@
 :root{--ink:#1a1a2e;--ink-mid:#3d3d5c;--ink-soft:#7b7b9a;--paper:#f7f6f2;--paper2:#eeecea;--rule:#d8d5cf;--gold:#b8860b;--gold-lt:#f5ecc8;--red:#c0392b;--green:#1a6b3c;--blue:#1a3a6b;--blue-lt:#e8eef8;--shadow:0 2px 12px rgba(26,26,46,.08);--shadow-md:0 4px 24px rgba(26,26,46,.13);}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.6}
-header{background:var(--ink);color:#fff;padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;box-shadow:var(--shadow-md)}
-.hbrand{display:flex;align-items:center;gap:8px;min-width:0}.hbrand img{width:34px;height:34px;border-radius:7px;background:#fff;padding:2px;flex-shrink:0}.hbrand h1{letter-spacing:.12em}
+header{background:#fff;color:var(--ink);border-bottom:1px solid var(--rule);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;box-shadow:var(--shadow)}
+.hbrand{display:flex;align-items:center;gap:8px;min-width:0}.hbrand img{width:36px;height:36px;flex-shrink:0}.hbrand h1{letter-spacing:.12em}
 .hbrand h1{font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hright{display:flex;align-items:center;gap:8px;font-size:12px}
-.who{background:rgba(255,255,255,.12);padding:3px 10px;border-radius:20px;white-space:nowrap}
+.who{background:var(--paper2);color:var(--ink-mid);font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .year-nav{background:var(--blue);color:#fff;padding:6px 16px;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;position:sticky;top:56px;z-index:195}
 .year-nav select{padding:3px 6px;border-radius:4px;border:none;font-weight:700}
 .lockbadge{background:var(--gold);color:var(--ink);font-size:11px;padding:1px 8px;border-radius:10px}
 nav.tabs{background:#fff;border-bottom:2px solid var(--rule);padding:0 8px;display:flex;overflow-x:auto;position:sticky;top:100px;z-index:190;scrollbar-width:none}
 nav.tabs::-webkit-scrollbar{display:none}
-.tbtn{padding:10px 14px;font-size:12px;font-weight:500;color:var(--ink-soft);background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;margin-bottom:-2px;font-family:inherit}
+.subnav{background:var(--paper);border-bottom:1px solid var(--rule);padding:8px 12px;display:flex;gap:6px;overflow-x:auto;position:sticky;top:141px;z-index:185;scrollbar-width:none}
+.subnav button{padding:5px 14px;border-radius:20px;border:1px solid var(--rule);background:#fff;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+.subnav button.active{background:var(--blue);color:#fff;border-color:var(--blue)}
+.tbtn{padding:10px 9px;font-size:12.5px;font-weight:500;color:var(--ink-soft);background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;margin-bottom:-2px;font-family:inherit}
 .tbtn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:700}
 .badge{background:var(--red);color:#fff;border-radius:10px;font-size:10px;padding:0 6px;margin-left:4px}
 main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
@@ -80,6 +83,7 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
     <div class="hright"><span class="who" id="who"></span><button class="btn btn-ghost btn-sm" id="refreshBtn">새로고침</button><button class="btn btn-ghost btn-sm" id="logoutBtn">로그아웃</button></div></header>
   <div class="year-nav">회계연도 <select id="yearSel"></select><span id="lockInfo"></span></div>
   <nav class="tabs" id="tabs"></nav>
+  <nav class="subnav" id="subnav"></nav>
   <main id="main"></main>
 </div>
 <div id="toast"></div>
@@ -94,7 +98,7 @@ const won=n=>Number(n||0).toLocaleString('ko-KR');
 const ROLE={spender:'지출자',accountant:'담당회계',admin:'관리자'};
 const ST={requested:'신청',approved:'승인',paid:'입금완료',rejected:'반려'};
 const DOCS={expense:'지출결의서',settlement:'결산',budget:'예산',borrow:'차용'};
-const S={me:null,year:new Date().getFullYear(),tab:'dash',sub:'perm',depts:[],cats:[],items:[],profiles:[],scopes:[],years:[],summary:[],expenses:[],borrows:[],slots:[],budgets:[],adjust:[],accts:[],bal:[],pay:[],idem:null,f:{dept:'',status:'',mine:false}};
+const S={me:null,year:new Date().getFullYear(),tab:'req',sub:'perm',depts:[],cats:[],items:[],profiles:[],scopes:[],years:[],summary:[],expenses:[],borrows:[],slots:[],budgets:[],adjust:[],accts:[],bal:[],pay:[],funds:[],tx:[],anns:[],reads:new Set(),idem:null,f:{dept:'',status:'',mine:false}};
 
 function toast(m,err){const t=$('#toast');t.textContent=m;t.className=err?'err':'';t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',err?6000:2500)}
 async function rpc(fn,args){const {data,error}=await sb.rpc(fn,args||{});if(error){toast(error.message,true);throw error}return data}
@@ -120,14 +124,16 @@ async function boot(){
   if(!p||!p.active){await sb.auth.signOut();$('#login').style.display='block';return toast('사용할 수 없는 계정입니다. 관리자에게 문의하세요.',true)}
   S.me=p;$('#login').style.display='none';$('#app').style.display='block';
   $('#who').textContent=`${p.display_name} · ${ROLE[p.role]}`;
-  await loadStatic();await loadYear();renderTabs();render();
+  S.tab='req';await loadStatic();await loadYear();renderTabs();render();
   if(isMoney()&&S.pay.length)payPopup();
+  annPopup();retentionPopup();
 }
 async function loadStatic(){
   const q=t=>sb.from(t).select('*');
   const [d,c,i,p,s,y,sl]=await Promise.all([q('departments').order('id'),q('categories').order('sort_order'),q('items').order('sort_order').order('id'),q('profiles').order('user_id'),q('user_scopes'),q('fiscal_years').order('year'),q('approval_slots').order('sort_order')]);
   S.depts=d.data||[];S.cats=c.data||[];S.items=i.data||[];S.profiles=p.data||[];S.scopes=s.data||[];S.years=y.data||[];S.slots=sl.data||[];
   if(isMoney()){const [a,b]=await Promise.all([q('bank_accounts').order('id'),sb.from('v_account_balance').select('*')]);S.accts=a.data||[];S.bal=b.data||[]}
+  {const [an,rd]=await Promise.all([q('announcements').order('id',{ascending:false}),sb.from('announcement_reads').select('announcement_id')]);S.anns=an.data||[];S.reads=new Set((rd.data||[]).map(x=>x.announcement_id))}
   const ys=S.years.map(x=>x.year);if(!ys.includes(S.year))S.year=ys.includes(new Date().getFullYear())?new Date().getFullYear():ys[ys.length-1];
   $('#yearSel').innerHTML=ys.map(v=>`<option ${v===S.year?'selected':''}>${v}</option>`).join('');
 }
@@ -140,24 +146,14 @@ async function loadYear(){
     sb.from('budgets').select('*').eq('fiscal_year',y),
     sb.from('budget_adjustments').select('*').eq('fiscal_year',y)]);
   S.summary=sm.data||[];S.expenses=ex.data||[];S.borrows=bo.data||[];S.budgets=bu.data||[];S.adjust=ad.data||[];
-  S.pay=[];if(isMoney()){const pp=await sb.rpc('pending_payouts');S.pay=pp.data||[]}
+  S.pay=[];S.funds=[];S.tx=[];if(isMoney()){const [pp,f,t]=await Promise.all([sb.rpc('pending_payouts'),sb.from('fund_requests').select('*').eq('fiscal_year',y).order('id',{ascending:false}),sb.from('account_tx').select('*').eq('fiscal_year',y).order('tx_date',{ascending:false}).order('id',{ascending:false})]);S.pay=pp.data||[];S.funds=f.data||[];S.tx=t.data||[]}
   const fy=S.years.find(v=>v.year===y);$('#lockInfo').innerHTML=fy?.locked?'<span class="lockbadge">🔒 마감됨</span>':'';
 }
 async function reload(){await loadStatic();await loadYear();renderTabs();render()}
 
 /* ───── 탭 ───── */
 function pendingCount(){return S.expenses.filter(e=>!e.deleted_at&&e.status==='requested'&&canProcess(e)).length+(isAdmin()?S.borrows.filter(b=>b.status==='requested').length:0)}
-function renderTabs(){
-  const t=[['dash','현황'],['req','지출신청'],['list','지출내역'],['borrow','차용']];
-  if(isMoney())t.push(['pay','입금관리']);
-  if(isAdmin())t.push(['set','설정']);
-  const pc=pendingCount();
-  $('#tabs').innerHTML=t.map(([k,l])=>`<button class="tbtn ${S.tab===k?'active':''}" data-tab="${k}">${l}${k==='list'&&pc?`<span class="badge">${pc}</span>`:''}${k==='pay'&&S.pay.length?`<span class="badge">${S.pay.length}</span>`:''}</button>`).join('');
-}
-function render(){
-  if(S.tab==='dash')return renderDash();if(S.tab==='req')return renderReq();if(S.tab==='list')return renderList();
-  if(S.tab==='borrow')return renderBorrow();if(S.tab==='pay')return renderPay();if(S.tab==='set')return renderSet();
-}
+
 
 /* ───── 현황 ───── */
 function renderDash(){
@@ -386,7 +382,8 @@ function setAppr(){
   $('#apsave').onclick=async()=>{try{await rpc('set_approval_line',{p_doc:S.apDoc,p_slots:S.apRows});toast('저장했습니다.');await loadStatic();draw()}catch(_){}};
 }
 function setYear(){
-  $('#subbody').innerHTML=`<div class="card"><div class="card-head"><h3>회계연도 마감</h3></div><div class="card-body"><p class="note">마감하면 관리자 외에는 해당 연도의 신청·승인·입금·차용을 처리할 수 없습니다.</p>
+  $('#subbody').innerHTML=`<div class="card"><div class="card-head"><h3>${S.year}년 담당자 기록</h3></div><div class="card-body"><p class="note">현재 사용자·역할·권한(체크박스)을 이 연도의 담당자 기록으로 저장합니다. 연도가 바뀌어 담당자가 달라지기 전에 저장해 두세요. 5년간 보관되며 기한이 지나면 관리자에게 알림이 표시됩니다.</p><button class="btn btn-primary" data-act="snap">이 연도 담당자 기록 저장</button></div></div>
+  <div class="card"><div class="card-head"><h3>회계연도 마감</h3></div><div class="card-body"><p class="note">마감하면 관리자 외에는 해당 연도의 신청·승인·입금·차용을 처리할 수 없습니다.</p>
   <table class="tbl"><tbody>${S.years.map(y=>`<tr><td><b>${y.year}년</b></td><td>${y.locked?'🔒 마감':'진행 중'}</td><td><button class="btn btn-ghost btn-sm" data-act="lock" data-id="${y.year}">${y.locked?'마감 해제':'마감하기'}</button></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
@@ -406,13 +403,13 @@ function payPopup(){
   m.querySelector('#pp-close').onclick=()=>m.remove();
   m.querySelector('#pp-go').onclick=()=>{m.remove();S.tab='pay';renderTabs();render()};
 }
-function renderPay(){
+function renderPay(which){
   const ua=usableAccts();if(!S.pickAcct||!ua.some(a=>a.id===S.pickAcct))S.pickAcct=ua[0]?.id||null;
   const ex=id=>S.expenses.find(e=>e.id===id);
   const tot=S.pay.reduce((s,g)=>s+ +g.total,0);
   const balOf=id=>S.bal.find(b=>b.account_id===id)?.balance??0;
   const ed=S.acctEdit?S.accts.find(a=>a.id===S.acctEdit):null;
-  $('#main').innerHTML=`
+  const HT=`
   <div class="card"><div class="card-head"><h3>입금 대기 (${S.pay.length}개 계좌 · ${won(tot)}원)</h3>
     <div class="filters"><label style="font-size:12px">출금 계좌</label><select id="pacct">${ua.map(a=>`<option value="${a.id}" ${a.id===S.pickAcct?'selected':''}>${esc(a.label)} (${esc(a.bank_name)} ${esc(a.account_no)}) · 잔액 ${won(balOf(a.id))}원</option>`).join('')||'<option value="">등록된 계좌 없음</option>'}</select>
     <button class="btn btn-green btn-sm" data-act="pall" ${S.pay.length&&S.pickAcct?'':'disabled'}>전체 입금완료</button></div></div>
@@ -428,6 +425,7 @@ function renderPay(){
   <div class="grid2" style="margin-top:8px"><div class="field"><label>이름(구분용)</label><input id="al" value="${esc(ed?.label||'')}" placeholder="예: 1청 회계 계좌"></div><div class="field"><label>은행</label><input id="ab" value="${esc(ed?.bank_name||'')}"></div></div>
   <div class="grid2"><div class="field"><label>계좌번호</label><input id="an" value="${esc(ed?.account_no||'')}" inputmode="numeric"></div><div class="field"><label>예금주</label><input id="ah" value="${esc(ed?.holder||'')}"></div></div>
   <button class="btn btn-primary btn-sm" data-act="acctsave">${ed?'수정 저장':'등록'}</button>${ed?' <button class="btn btn-ghost btn-sm" data-act="acctcancel">취소</button>':''}</div></div>`;
+  const iP=HT.indexOf('<div class="card"><div class="card-head"><h3>내 계좌 관리');$('#main').innerHTML=which==='accts'?HT.slice(iP):HT.slice(0,iP);
   const pa=$('#pacct');if(pa)pa.onchange=e=>{S.pickAcct=+e.target.value||null};
 }
 async function payAct(a,i){
@@ -440,18 +438,190 @@ async function payAct(a,i){
       const n=await rpc('pay_expenses',{p_ids:ids,p_account:acct.id});toast(`${n}건 입금완료 처리했습니다.`);
     }
     if(a==='acctsave'){const ed=S.acctEdit;await rpc('save_account',{p_id:ed||null,p_label:$('#al').value,p_bank:$('#ab').value,p_no:$('#an').value,p_holder:$('#ah').value});S.acctEdit=null;toast('저장했습니다.')}
-    if(a==='acctedit'){S.acctEdit=+i;return renderPay()}
-    if(a==='acctcancel'){S.acctEdit=null;return renderPay()}
+    if(a==='acctedit'){S.acctEdit=+i;return render()}
+    if(a==='acctcancel'){S.acctEdit=null;return render()}
     await loadStatic();await loadYear();renderTabs();render();
   }catch(_){}
 }
 
+/* ───── 메뉴 구조 ───── */
+const all=()=>true,money=()=>isMoney(),adm=()=>isAdmin();
+const MENU=[
+ {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list','지출 내역'],['pay','입금 처리',money]]},
+ {k:'m_inc',l:'수입',vis:money,subs:[['fund','청구 입금확인'],['income','수입 등록'],['inclist','수입 내역']]},
+ {k:'m_acc',l:'계좌',vis:money,subs:[['accts','계좌 관리'],['ledger','입출금 내역'],['transfer','이체']]},
+ {k:'m_bud',l:'예산',vis:money,subs:[['plan','예산 수립',adm],['claim','예산 청구'],['borrow','부서 간 차용']]},
+ {k:'m_dash',l:'현황',vis:all,subs:[['dash','부서별 현황']]},
+ {k:'m_aud',l:'감사',vis:money,subs:[['daily','일일 수지내역'],['monthly','월별 수지내역'],['settle','수지결산보고서']]},
+ {k:'m_ann',l:'공지',vis:all,subs:[['annlist','공지 목록']]},
+ {k:'m_set',l:'설정',vis:all,subs:[['perm','권한설정',adm],['items','계정항목 설정',adm],['appr','결재란 설정',adm],['year','연도·마감',adm],['mypw','내 비밀번호']]}];
+const subOf=m=>m.subs.filter(s=>(s[2]||m.vis)());
+const topOf=k=>MENU.find(m=>m.subs.some(s=>s[0]===k));
+function sub(fn){$('#main').innerHTML='<div id="subbody"></div>';fn()}
+function soon(t,d){$('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${esc(t)}</h3></div><div class="card-body empty">준비 중입니다.<br><span class="note">${esc(d||'')}</span></div></div>`}
+const TODAY=()=>new Date().toLocaleDateString('sv-SE');
+function unreadAnn(){return (S.anns||[]).filter(a=>a.active&&a.popup&&!S.reads.has(a.id)&&(!a.expires_at||a.expires_at>=TODAY()))}
+function badgeOf(k){
+  if(k==='list')return pendingCount()-(isAdmin()?S.borrows.filter(b=>b.status==='requested').length:0);
+  if(k==='pay')return S.pay.length;
+  if(k==='fund')return (S.funds||[]).filter(f=>f.status==='requested'&&(isAdmin()||hasScope(f.dept_id,f.category_id))).length;
+  if(k==='borrow')return isAdmin()?S.borrows.filter(b=>b.status==='requested').length:0;
+  if(k==='annlist')return unreadAnn().length;return 0}
+function renderTabs(){
+  const cur=topOf(S.tab),tops=MENU.filter(m=>m.vis()&&subOf(m).length);
+  $('#tabs').innerHTML=tops.map(m=>{const n=subOf(m).reduce((s,x)=>s+badgeOf(x[0]),0);return `<button class="tbtn ${cur===m?'active':''}" data-top="${m.k}">${m.l}${n?`<span class="badge">${n}</span>`:''}</button>`}).join('');
+  const ss=cur?subOf(cur):[];
+  $('#subnav').innerHTML=ss.length>1?ss.map(x=>{const n=badgeOf(x[0]);return `<button class="${S.tab===x[0]?'active':''}" data-tab="${x[0]}">${x[1]}${n?`<span class="badge">${n}</span>`:''}</button>`}).join(''):'';
+  $('#subnav').style.display=ss.length>1?'flex':'none';
+}
+function render(){(LEAF[S.tab]||renderDash)()}
+
+/* ───── 공지 ───── */
+const ROLE_ALL=['spender','accountant','admin'];
+function renderAnn(){
+  const list=(S.anns||[]).filter(a=>a.active||isAdmin()||a.created_by===S.me.user_id);
+  $('#main').innerHTML=`${isMoney()?'<div style="margin-bottom:12px"><button class="btn btn-primary" data-act="annnew">+ 새 공지</button></div>':''}
+  ${list.map(a=>{const mineOrAdm=isAdmin()||a.created_by===S.me.user_id;
+   return `<div class="card"><div class="card-head"><h3>${esc(a.title)}${a.active?'':' <span class="st st-rejected">숨김</span>'}${a.popup?' <span class="st st-requested">팝업</span>':''}</h3>
+   <span class="note">${esc(pn(a.created_by))} · ${a.created_at.slice(0,10)}${a.expires_at?' · ~'+a.expires_at:''}${isAdmin()&&a.audience_roles.length<3?' · 대상: '+a.audience_roles.map(r=>ROLE[r]).join(', '):''}</span></div>
+   <div class="card-body" style="white-space:pre-wrap">${esc(a.body)}</div>
+   ${mineOrAdm&&isMoney()?`<div class="card-body" style="padding-top:0"><button class="btn btn-ghost btn-sm" data-act="annedit" data-id="${a.id}">수정</button> <button class="btn btn-ghost btn-sm" data-act="anndel" data-id="${a.id}">삭제</button></div>`:''}</div>`}).join('')||'<div class="card"><div class="card-body empty">등록된 공지가 없습니다.</div></div>'}`;
+  const un=list.filter(a=>!S.reads.has(a.id));un.forEach(a=>rpc('ack_announcement',{p_id:a.id}).then(()=>S.reads.add(a.id)).catch(()=>{}));
+  setTimeout(renderTabs,600);
+}
+function annModal(a){
+  const m=modal(`<h3>${a?'공지 수정':'새 공지'}</h3><div class="field"><label>제목</label><input id="at" maxlength="100" value="${esc(a?.title||'')}"></div>
+  <div class="field"><label>내용</label><textarea id="ab" rows="6">${esc(a?.body||'')}</textarea></div>
+  <div class="grid2"><div class="field"><label>게시 종료일 (선택)</label><input id="ae" type="date" value="${a?.expires_at||''}"></div>
+  <div class="field"><label>옵션</label><label style="font-weight:400"><input type="checkbox" id="ap" ${(a?.popup??true)?'checked':''}> 로그인 시 팝업으로 알림</label>${a?`<label style="font-weight:400"><input type="checkbox" id="aa" ${a.active?'checked':''}> 게시 중</label>`:''}</div></div>
+  ${isAdmin()?`<div class="field"><label>열람 대상 (관리자만 설정)</label>${ROLE_ALL.map(r=>`<label style="font-weight:400;margin-right:12px"><input type="checkbox" class="ar" value="${r}" ${(a?.audience_roles||ROLE_ALL).includes(r)?'checked':''}> ${ROLE[r]}</label>`).join('')}</div>`:'<p class="note">회계가 올린 공지는 모든 사용자에게 보입니다.</p>'}
+  ${a?'<p class="note">내용을 수정하면 모두에게 팝업이 다시 표시됩니다.</p>':''}
+  <div class="actions"><button class="btn btn-ghost" id="ax">닫기</button><button class="btn btn-primary" id="as">저장</button></div>`);
+  m.querySelector('#ax').onclick=()=>m.remove();
+  m.querySelector('#as').onclick=async()=>{
+    const roles=isAdmin()?[...m.querySelectorAll('.ar:checked')].map(x=>x.value):null;
+    try{
+      if(a)await rpc('update_announcement',{p_id:a.id,p_title:m.querySelector('#at').value,p_body:m.querySelector('#ab').value,p_popup:m.querySelector('#ap').checked,p_expires:m.querySelector('#ae').value||null,p_active:m.querySelector('#aa').checked,p_roles:roles});
+      else await rpc('post_announcement',{p_title:m.querySelector('#at').value,p_body:m.querySelector('#ab').value,p_popup:m.querySelector('#ap').checked,p_expires:m.querySelector('#ae').value||null,p_roles:roles});
+      m.remove();toast('저장했습니다.');await loadStatic();renderTabs();render()}catch(_){}};
+}
+function annPopup(){
+  const un=unreadAnn();if(!un.length)return;
+  const m=modal(`<h3>📢 공지사항</h3>${un.map(a=>`<div style="border-bottom:1px solid var(--rule);padding:8px 0"><b>${esc(a.title)}</b><div class="note">${esc(pn(a.created_by))} · ${a.created_at.slice(0,10)}</div><div style="white-space:pre-wrap;margin-top:4px">${esc(a.body)}</div></div>`).join('')}
+  <div class="actions"><button class="btn btn-primary" id="an-ok">확인</button></div>`);
+  m.querySelector('#an-ok').onclick=async()=>{for(const a of un){try{await sb.rpc('ack_announcement',{p_id:a.id});S.reads.add(a.id)}catch(_){}}m.remove();renderTabs()};
+}
+async function retentionPopup(){
+  if(!isAdmin())return;const {data}=await sb.rpc('retention_alerts');if(!data||!data.length)return;
+  const m=modal(`<h3 style="color:var(--red)">⚠ 보관기한 경과 알림</h3><p class="note">개인정보·담당자 기록은 5년 보관 후 파기하도록 되어 있습니다.</p>
+  <ul style="margin:8px 0 0 18px">${data.map(x=>`<li>${x.kind==='expense_payees'?'지출 입금계좌 정보':'연도별 담당자 기록'} — ${esc(x.label)} (${x.expired?'기한 경과':'30일 내 만료'}, ${String(x.due).slice(0,10)})</li>`).join('')}</ul>
+  <div class="actions">${data.some(x=>x.kind==='expense_payees')?'<button class="btn btn-danger" id="rt-purge">지금 파기</button>':''}<button class="btn btn-ghost" id="rt-x">닫기</button></div>`);
+  m.querySelector('#rt-x').onclick=()=>m.remove();
+  const pg=m.querySelector('#rt-purge');if(pg)pg.onclick=async()=>{if(!confirm('5년이 지난 지출의 입금계좌 정보를 영구 삭제할까요?'))return;try{const n=await rpc('purge_expired_payees');toast(`${n}건 파기했습니다.`);m.remove()}catch(_){}};
+}
+
+/* ───── 수입 / 청구 ───── */
+function acctOpts(sel){return usableAccts().map(a=>`<option value="${a.id}" ${a.id===sel?'selected':''}>${esc(a.label)} (${esc(a.bank_name)} ${esc(a.account_no)})</option>`).join('')||'<option value="">등록된 계좌 없음</option>'}
+function dcFields(d,c,blank){const cb=allowedCombos(),ds=[...new Set(cb.map(x=>x.dept_id))];
+  return `<div class="field"><label>부서</label><select id="${d}">${blank?'<option value="">(공통·미지정)</option>':''}${ds.map(x=>`<option value="${x}">${esc(dn(x))}</option>`).join('')}</select></div><div class="field"><label>항</label><select id="${c}"></select></div>`}
+function dcWire(d,c,blank){const cb=allowedCombos();const fill=()=>{const dv=+$('#'+d).value;const cs=dv?[...new Set(cb.filter(x=>x.dept_id===dv).map(x=>x.category_id))]:[];$('#'+c).innerHTML=(dv||!blank?'':'<option value="">(미지정)</option>')+cs.map(x=>`<option value="${x}">${esc(cn(x))}</option>`).join('')};$('#'+d).onchange=fill;fill()}
+const SRC={fund_request:'청구 입금',income:'수입 등록',expense:'지출',transfer:'이체'};
+function fundTable(rows,withAct){
+  if(!rows.length)return '<div class="empty">내역이 없습니다.</div>';
+  const an=id=>{const a=S.accts.find(x=>x.id===id);return a?`${esc(a.label)}`:'-'};
+  return `<div class="tblwrap"><table class="tbl"><thead><tr><th>청구일</th><th>부서 / 항</th><th class="num">금액</th><th>입금 계좌</th><th>메모</th><th>청구자</th><th>상태</th><th></th></tr></thead><tbody>${rows.map(f=>`<tr><td>${f.requested_at.slice(0,10)}</td><td>${esc(dn(f.dept_id))} · ${esc(cn(f.category_id))}</td><td class="num">${won(f.amount)}</td><td>${an(f.account_id)}</td><td>${esc(f.memo||'')}</td><td>${esc(pn(f.requested_by))}</td><td><span class="st st-${f.status==='requested'?'requested':f.status==='deposited'?'paid':'rejected'}">${{requested:'입금 대기',deposited:'입금 확인',cancelled:'취소'}[f.status]}</span></td>
+  <td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-act="fprt" data-id="${f.id}">인쇄</button>${f.status==='requested'?` ${withAct&&(isAdmin()||hasScope(f.dept_id,f.category_id))?`<button class="btn btn-green btn-sm" data-act="fdep" data-id="${f.id}">입금확인</button>`:''} ${isAdmin()||f.requested_by===S.me.user_id?`<button class="btn btn-ghost btn-sm" data-act="fcan" data-id="${f.id}">취소</button>`:''}`:''}</td></tr>`).join('')}</tbody></table></div>`}
+function renderFund(){
+  const rows=S.funds.filter(f=>isAdmin()||hasScope(f.dept_id,f.category_id)||f.requested_by===S.me.user_id);
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>청구 입금확인 (대기 ${rows.filter(f=>f.status==='requested').length}건)</h3></div>${fundTable(rows,true)}<div class="card-body"><p class="note">본부에서 청구한 금액이 계좌로 입금되면 [입금확인]을 누르세요. 해당 계좌의 수입으로 자동 기록됩니다. 시스템에 청구를 등록하지 않았다면 [수입 등록]에서 직접 추가할 수 있습니다.</p></div></div>`}
+function renderClaim(){
+  if(!allowedCombos().length)return $('#main').innerHTML='<div class="card"><div class="card-body empty">청구할 수 있는 부서·항이 없습니다. 관리자에게 권한설정을 요청하세요.</div></div>';
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>예산 청구 등록</h3></div><div class="card-body">
+  <div class="grid3">${dcFields('cd','cc')}<div class="field"><label>청구 금액(원)</label><input id="ca" type="number" min="1" inputmode="numeric"></div></div>
+  <div class="grid2"><div class="field"><label>입금받을 계좌</label><select id="cacct">${acctOpts()}</select></div><div class="field"><label>사유 / 메모</label><input id="cm" maxlength="200"></div></div>
+  <label style="font-size:12px"><input type="checkbox" id="cp" checked> 등록 후 바로 인쇄</label><br><br>
+  <button class="btn btn-primary" id="cbtn">청구 등록</button>
+  <p class="note">본부 제출은 오프라인으로 진행합니다. 인쇄하지 않아도 이 기록으로 입금 여부를 확인할 수 있습니다. (인쇄 서식은 추후 유아부 서식으로 교체됩니다)</p></div></div>
+  <div class="card"><div class="card-head"><h3>청구 내역</h3></div>${fundTable(S.funds,false)}</div>`;
+  dcWire('cd','cc');
+  $('#cbtn').onclick=async()=>{try{const id=await rpc('create_fund_request',{p_year:S.year,p_dept:+$('#cd').value,p_cat:+$('#cc').value,p_amount:+$('#ca').value,p_memo:$('#cm').value||null,p_account:+$('#cacct').value});
+    const pr=$('#cp').checked;toast('청구를 등록했습니다.');await loadYear();renderTabs();render();if(pr)printClaim(id)}catch(_){}};
+}
+function printClaim(id){
+  const f=S.funds.find(x=>x.id===+id);if(!f)return toast('청구 내역을 찾을 수 없습니다.',true);const a=S.accts.find(x=>x.id===f.account_id);
+  const row=(k,v)=>`<tr><th>${k}</th><td>${v}</td></tr>`;
+  doPrint(printHTML('예산 청구서',`<table class="d">${row('회계연도',f.fiscal_year+'년')}${row('부서',esc(dn(f.dept_id)))}${row('항',esc(cn(f.category_id)))}${row('청구 금액',won(f.amount)+'원')}${row('입금 계좌',a?esc(a.bank_name+' '+a.account_no+' ('+a.holder+')'):'-')}${row('사유',esc(f.memo||''))}${row('청구일',f.requested_at.slice(0,10))}${row('청구자',esc(pn(f.requested_by)))}</table>`,'budget'));
+}
+function renderIncome(){
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>수입 등록</h3></div><div class="card-body">
+  <p class="note">청구 없이 들어온 이월금·헌금·기타 수입을 직접 등록합니다. 선택한 계좌의 입금 내역으로 기록됩니다.</p>
+  <div class="grid2"><div class="field"><label>입금 계좌</label><select id="ia">${acctOpts()}</select></div><div class="field"><label>입금일</label><input id="id" type="date" value="${TODAY()}"></div></div>
+  <div class="grid3">${dcFields('id1','ic',isAdmin())}<div class="field"><label>금액(원)</label><input id="iam" type="number" min="1" inputmode="numeric"></div></div>
+  <div class="field"><label>내용</label><input id="ides" maxlength="100" placeholder="예: 전년도 이월금"></div>
+  <button class="btn btn-primary" id="ibtn">등록</button></div></div>`;
+  dcWire('id1','ic',isAdmin());
+  $('#ibtn').onclick=async()=>{try{await rpc('register_income',{p_year:S.year,p_account:+$('#ia').value,p_dept:$('#id1').value?+$('#id1').value:null,p_cat:$('#ic').value?+$('#ic').value:null,p_amount:+$('#iam').value,p_date:$('#id').value,p_desc:$('#ides').value});toast('등록했습니다.');await loadStatic();await loadYear();renderTabs();render()}catch(_){}};
+}
+function txTable(rows,withBal){
+  if(!rows.length)return '<div class="empty">내역이 없습니다.</div>';
+  const an=id=>esc(S.accts.find(x=>x.id===id)?.label||'-');
+  return `<div class="tblwrap"><table class="tbl"><thead><tr><th>일자</th><th>계좌</th><th>부서 / 항</th><th>내용</th><th>구분</th><th class="num">입금</th><th class="num">출금</th>${withBal?'<th class="num">잔액</th>':''}<th></th></tr></thead><tbody>${rows.map(t=>`<tr${t.deleted_at?' style="opacity:.4;text-decoration:line-through"':''}><td>${t.tx_date}</td><td>${an(t.account_id)}</td><td>${t.dept_id?esc(dn(t.dept_id))+' · '+esc(cn(t.category_id)):'-'}</td><td>${esc(t.description)}</td><td>${SRC[t.source]}</td><td class="num">${t.kind==='in'?won(t.amount):''}</td><td class="num">${t.kind==='out'?won(t.amount):''}</td>${withBal?`<td class="num">${t._bal!==undefined?won(t._bal):''}</td>`:''}<td>${isAdmin()&&!t.deleted_at?`<button class="btn btn-ghost btn-sm" data-act="vtx" data-id="${t.id}">취소</button>`:''}</td></tr>`).join('')}</tbody></table></div>`}
+function renderIncList(){
+  const rows=S.tx.filter(t=>t.kind==='in'&&!t.deleted_at&&t.source!=='transfer'),tot=rows.reduce((s,t)=>s+ +t.amount,0);
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${S.year}년 수입 내역 (${rows.length}건 · ${won(tot)}원)</h3></div>${txTable(rows)}</div>`}
+function renderLedger(){
+  const ac=S.accts;if(!S.ledAcct||!ac.some(a=>a.id===S.ledAcct))S.ledAcct=ac.find(a=>a.kind==='personal'||isAdmin())?.id||ac[0]?.id;
+  const mon=S.ledMon||'';
+  let rows=S.tx.filter(t=>t.account_id===S.ledAcct&&(isAdmin()||!t.deleted_at)).sort((a,b)=>a.tx_date<b.tx_date?-1:a.tx_date>b.tx_date?1:a.id-b.id);
+  let bal=0;rows.forEach(t=>{if(!t.deleted_at){bal+=t.kind==='in'?+t.amount:-t.amount;t._bal=bal}});
+  const months=[...new Set(rows.map(t=>t.tx_date.slice(0,7)))];if(mon)rows=rows.filter(t=>t.tx_date.startsWith(mon));
+  const a=ac.find(x=>x.id===S.ledAcct);
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>입출금 내역${a?' — '+esc(a.label):''} (잔액 ${won(S.bal.find(b=>b.account_id===S.ledAcct)?.balance??0)}원)</h3>
+  <div class="filters"><select id="la">${ac.map(x=>`<option value="${x.id}" ${x.id===S.ledAcct?'selected':''}>${esc(x.label)}</option>`).join('')}</select><select id="lm"><option value="">전체 기간</option>${months.map(m=>`<option ${m===mon?'selected':''}>${m}</option>`).join('')}</select></div></div>${txTable(rows,true)}</div>`;
+  $('#la').onchange=e=>{S.ledAcct=+e.target.value;renderLedger()};$('#lm').onchange=e=>{S.ledMon=e.target.value;renderLedger()};
+}
+function renderTransfer(){
+  const o=S.accts.map(a=>`<option value="${a.id}">${esc(a.label)} (${esc(a.bank_name)} ${esc(a.account_no)})</option>`).join('');
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>계좌 간 이체 기록</h3></div><div class="card-body"><p class="note">총괄계좌에서 개인 계좌로 전도금을 보낸 경우처럼, 실제 이체를 마친 뒤 양쪽 계좌에 출금·입금 내역을 함께 기록합니다. 본인 계좌가 포함된 이체만 등록할 수 있습니다.</p>
+  <div class="grid2"><div class="field"><label>보내는 계좌</label><select id="tf">${o}</select></div><div class="field"><label>받는 계좌</label><select id="tt">${o}</select></div></div>
+  <div class="grid3"><div class="field"><label>금액(원)</label><input id="tam" type="number" min="1"></div><div class="field"><label>일자</label><input id="td" type="date" value="${TODAY()}"></div><div class="field"><label>메모</label><input id="tm"></div></div>
+  <button class="btn btn-primary" id="tbtn">기록</button></div></div>`;
+  $('#tbtn').onclick=async()=>{try{await rpc('transfer_between',{p_year:S.year,p_from:+$('#tf').value,p_to:+$('#tt').value,p_amount:+$('#tam').value,p_date:$('#td').value,p_memo:$('#tm').value||null});toast('기록했습니다.');await loadStatic();await loadYear();renderTabs();render()}catch(_){}};
+}
+function renderMyPw(){
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>내 비밀번호 변경</h3></div><div class="card-body" style="max-width:380px">
+  <div class="field"><label>새 비밀번호 (8자 이상)</label><input id="pw1" type="password" autocomplete="new-password"></div>
+  <div class="field"><label>새 비밀번호 확인</label><input id="pw2" type="password" autocomplete="new-password"></div>
+  <button class="btn btn-primary" id="pwbtn">변경</button><p class="note">아이디는 관리자만 변경할 수 있습니다.</p></div></div>`;
+  $('#pwbtn').onclick=async()=>{const a=$('#pw1').value;if(a.length<8)return toast('8자 이상 입력하세요.',true);if(a!==$('#pw2').value)return toast('비밀번호 확인이 일치하지 않습니다.',true);
+    const {error}=await sb.auth.updateUser({password:a});if(error)return toast(error.message,true);$('#pw1').value=$('#pw2').value='';toast('비밀번호를 변경했습니다.')};
+}
+async function miscAct(a,id){
+  try{
+    if(a==='annnew')return annModal(null);
+    if(a==='annedit')return annModal(S.anns.find(x=>x.id===+id));
+    if(a==='anndel'){if(!confirm('공지를 삭제할까요?'))return;await rpc('delete_announcement',{p_id:+id});toast('삭제했습니다.');await loadStatic();renderTabs();return render()}
+    if(a==='snap'){const n=await rpc('snapshot_year_assignments',{p_year:S.year});return toast(`${n}명의 담당자 기록을 저장했습니다.`)}
+    if(a==='fprt')return printClaim(id);
+    if(a==='fdep'){const d=prompt('입금일 (YYYY-MM-DD)',TODAY());if(!d)return;if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return toast('날짜 형식이 올바르지 않습니다.',true);await rpc('confirm_fund_deposit',{p_id:+id,p_date:d});toast('입금을 확인했습니다. 계좌 수입으로 기록되었습니다.')}
+    if(a==='fcan'){if(!confirm('이 청구를 취소할까요?'))return;await rpc('cancel_fund_request',{p_id:+id});toast('취소했습니다.')}
+    if(a==='vtx'){if(!confirm('이 입출금 내역을 취소할까요? (연결된 지출·청구는 이전 상태로 돌아갑니다)'))return;await rpc('void_tx',{p_id:+id});toast('취소했습니다.')}
+    await loadStatic();await loadYear();renderTabs();render();
+  }catch(_){}
+}
+const LEAF={req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderFund,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,transfer:renderTransfer,
+ plan:()=>sub(setBudget),claim:renderClaim,borrow:renderBorrow,dash:renderDash,
+ daily:()=>soon('일일 수지내역','유아부 서식 그대로 이식할 예정입니다.'),monthly:()=>soon('월별 수지내역','유아부 서식 그대로 이식할 예정입니다.'),settle:()=>soon('수지결산보고서','유아부 서식 그대로 이식할 예정입니다.'),
+ annlist:renderAnn,perm:()=>sub(setPerm),items:()=>sub(setAcct),appr:()=>sub(setAppr),year:()=>sub(setYear),mypw:renderMyPw};
+
 /* ───── 이벤트 ───── */
 document.addEventListener('click',async ev=>{
-  const t=ev.target.closest('[data-tab],[data-sub],[data-act]');if(!t)return;
+  const t=ev.target.closest('[data-top],[data-tab],[data-sub],[data-act]');if(!t)return;
+  if(t.dataset.top){const m=MENU.find(x=>x.k===t.dataset.top);S.tab=subOf(m)[0][0];renderTabs();return render()}
   if(t.dataset.tab){S.tab=t.dataset.tab;renderTabs();return render()}
   if(t.dataset.sub){S.sub=t.dataset.sub;return renderSet()}
   const a=t.dataset.act,id=t.dataset.id;
+  if(['annnew','annedit','anndel','fprt','fdep','fcan','vtx','snap'].includes(a))return miscAct(a,id);
   if(['pcopy','pgroup','pall','acctsave','acctedit','acctcancel'].includes(a))return payAct(a,t.dataset.i??id);
   if(['catadd','catren','cattog','itadd','itedit','itdel'].includes(a))return setAct(a,id);
   if(a==='aprm'){S.apRows.splice(+id,1);return S.apPaint()}
