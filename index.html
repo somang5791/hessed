@@ -94,11 +94,12 @@ const won=n=>Number(n||0).toLocaleString('ko-KR');
 const ROLE={spender:'지출자',accountant:'담당회계',admin:'관리자'};
 const ST={requested:'신청',approved:'승인',paid:'입금완료',rejected:'반려'};
 const DOCS={expense:'지출결의서',settlement:'결산',budget:'예산',borrow:'차용'};
-const S={me:null,year:new Date().getFullYear(),tab:'dash',sub:'perm',depts:[],cats:[],items:[],profiles:[],scopes:[],years:[],summary:[],expenses:[],borrows:[],slots:[],budgets:[],adjust:[],idem:null,f:{dept:'',status:'',mine:false}};
+const S={me:null,year:new Date().getFullYear(),tab:'dash',sub:'perm',depts:[],cats:[],items:[],profiles:[],scopes:[],years:[],summary:[],expenses:[],borrows:[],slots:[],budgets:[],adjust:[],accts:[],bal:[],pay:[],idem:null,f:{dept:'',status:'',mine:false}};
 
 function toast(m,err){const t=$('#toast');t.textContent=m;t.className=err?'err':'';t.style.display='block';clearTimeout(toast.t);toast.t=setTimeout(()=>t.style.display='none',err?6000:2500)}
 async function rpc(fn,args){const {data,error}=await sb.rpc(fn,args||{});if(error){toast(error.message,true);throw error}return data}
 function isAdmin(){return S.me?.role==='admin'}
+function isMoney(){return S.me?.role==='accountant'||S.me?.role==='admin'}
 function myScopes(){return S.scopes.filter(s=>s.user_id===S.me.user_id)}
 function hasScope(d,c){return isAdmin()||myScopes().some(s=>s.dept_id===d&&s.category_id===c)}
 function canProcess(e){return isAdmin()||(S.me.role==='accountant'&&hasScope(e.dept_id,e.category_id))}
@@ -120,11 +121,13 @@ async function boot(){
   S.me=p;$('#login').style.display='none';$('#app').style.display='block';
   $('#who').textContent=`${p.display_name} · ${ROLE[p.role]}`;
   await loadStatic();await loadYear();renderTabs();render();
+  if(isMoney()&&S.pay.length)payPopup();
 }
 async function loadStatic(){
   const q=t=>sb.from(t).select('*');
   const [d,c,i,p,s,y,sl]=await Promise.all([q('departments').order('id'),q('categories').order('sort_order'),q('items').order('sort_order').order('id'),q('profiles').order('user_id'),q('user_scopes'),q('fiscal_years').order('year'),q('approval_slots').order('sort_order')]);
   S.depts=d.data||[];S.cats=c.data||[];S.items=i.data||[];S.profiles=p.data||[];S.scopes=s.data||[];S.years=y.data||[];S.slots=sl.data||[];
+  if(isMoney()){const [a,b]=await Promise.all([q('bank_accounts').order('id'),sb.from('v_account_balance').select('*')]);S.accts=a.data||[];S.bal=b.data||[]}
   const ys=S.years.map(x=>x.year);if(!ys.includes(S.year))S.year=ys.includes(new Date().getFullYear())?new Date().getFullYear():ys[ys.length-1];
   $('#yearSel').innerHTML=ys.map(v=>`<option ${v===S.year?'selected':''}>${v}</option>`).join('');
 }
@@ -137,6 +140,7 @@ async function loadYear(){
     sb.from('budgets').select('*').eq('fiscal_year',y),
     sb.from('budget_adjustments').select('*').eq('fiscal_year',y)]);
   S.summary=sm.data||[];S.expenses=ex.data||[];S.borrows=bo.data||[];S.budgets=bu.data||[];S.adjust=ad.data||[];
+  S.pay=[];if(isMoney()){const pp=await sb.rpc('pending_payouts');S.pay=pp.data||[]}
   const fy=S.years.find(v=>v.year===y);$('#lockInfo').innerHTML=fy?.locked?'<span class="lockbadge">🔒 마감됨</span>':'';
 }
 async function reload(){await loadStatic();await loadYear();renderTabs();render()}
@@ -145,13 +149,14 @@ async function reload(){await loadStatic();await loadYear();renderTabs();render(
 function pendingCount(){return S.expenses.filter(e=>!e.deleted_at&&e.status==='requested'&&canProcess(e)).length+(isAdmin()?S.borrows.filter(b=>b.status==='requested').length:0)}
 function renderTabs(){
   const t=[['dash','현황'],['req','지출신청'],['list','지출내역'],['borrow','차용']];
+  if(isMoney())t.push(['pay','입금관리']);
   if(isAdmin())t.push(['set','설정']);
   const pc=pendingCount();
-  $('#tabs').innerHTML=t.map(([k,l])=>`<button class="tbtn ${S.tab===k?'active':''}" data-tab="${k}">${l}${k==='list'&&pc?`<span class="badge">${pc}</span>`:''}</button>`).join('');
+  $('#tabs').innerHTML=t.map(([k,l])=>`<button class="tbtn ${S.tab===k?'active':''}" data-tab="${k}">${l}${k==='list'&&pc?`<span class="badge">${pc}</span>`:''}${k==='pay'&&S.pay.length?`<span class="badge">${S.pay.length}</span>`:''}</button>`).join('');
 }
 function render(){
   if(S.tab==='dash')return renderDash();if(S.tab==='req')return renderReq();if(S.tab==='list')return renderList();
-  if(S.tab==='borrow')return renderBorrow();if(S.tab==='set')return renderSet();
+  if(S.tab==='borrow')return renderBorrow();if(S.tab==='pay')return renderPay();if(S.tab==='set')return renderSet();
 }
 
 /* ───── 현황 ───── */
@@ -186,16 +191,26 @@ function renderReq(){
   <div class="grid3"><div class="field"><label>부서 <span class="req">*</span></label><select id="rd">${ds.map(d=>`<option value="${d}">${esc(dn(d))}</option>`).join('')}</select></div>
   <div class="field"><label>항 <span class="req">*</span></label><select id="rc"></select></div>
   <div class="field"><label>목</label><select id="ri"></select></div></div>
-  <div class="grid3"><div class="field"><label>금액(원) <span class="req">*</span></label><input id="ra" type="number" min="1" inputmode="numeric"></div>
+  <div class="grid3"><div class="field"><label>금액(원) <span class="req">*</span></label><input id="ra" type="number" min="1" inputmode="numeric"><div id="balLine" class="hint"></div></div>
   <div class="field"><label>지출일 <span class="req">*</span></label><input id="rdt" type="date" value="${new Date().toLocaleDateString('sv-SE')}"></div>
   <div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"></div></div>
-  <div class="field"><label>적요 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="예: 부활절 행사 간식"></div>
+    <div class="field"><label>적요 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="예: 부활절 행사 간식"></div>
   <div class="field"><label>비고</label><input id="rn" maxlength="200"></div>
+  <div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px"><b style="font-size:12px">입금받을 계좌</b>
+  <div class="grid3" style="margin-top:8px"><div class="field"><label>예금주 <span class="req">*</span></label><input id="ph" maxlength="30" autocomplete="off"></div>
+  <div class="field"><label>은행 <span class="req">*</span></label><input id="pb" maxlength="20" autocomplete="off" placeholder="예: 국민"></div>
+  <div class="field"><label>계좌번호 <span class="req">*</span></label><input id="pa" maxlength="25" inputmode="numeric" autocomplete="off" placeholder="숫자와 -"></div></div>
+  <label style="font-size:12px"><input type="checkbox" id="pr" checked> 이 기기에 기억하기 (다음 신청 때 자동으로 채워집니다)</label>
+  <p class="note">입력한 계좌 정보는 입금 처리를 위해서만 사용하며, 담당 회계·관리자만 볼 수 있습니다. 회계 기록 보존을 위해 5년간 보관한 뒤 파기합니다. 법령에 근거한 경우를 제외하고 제3자에게 제공하지 않습니다.</p></div></div>
   <p class="note">영수증은 자동으로 줄여서 올라갑니다. 신청자·해당 담당회계·관리자만 볼 수 있습니다.</p>
   <button class="btn btn-primary" id="reqBtn">신청</button></div></div>`;
   const fillC=()=>{const d=+$('#rd').value;const cs=[...new Set(cb.filter(x=>x.dept_id===d).map(x=>x.category_id))];$('#rc').innerHTML=cs.map(c=>`<option value="${c}">${esc(cn(c))}</option>`).join('');fillI()};
   const fillI=()=>{const its=itemsFor($('#rd').value,$('#rc').value);$('#ri').innerHTML=its.length?its.map(i=>`<option value="${i.id}">${esc(i.name)}</option>`).join(''):'<option value="">(목 없음)</option>'};
-  $('#rd').onchange=fillC;$('#rc').onchange=fillI;fillC();
+  const bal=()=>{const d=+$('#rd').value,c=+$('#rc').value,r=S.summary.find(x=>x.dept_id===d&&x.category_id===c)||{budget:0,used:0,pending:0};
+    const rem=r.budget-r.used-r.pending,a=+$('#ra').value||0,after=rem-a;
+    $('#balLine').innerHTML=`${esc(dn(d))} · ${esc(cn(c))} 예산 ${won(r.budget)}원 / 사용·대기 ${won(+r.used+ +r.pending)}원 → 현재 잔액 <b>${won(rem)}원</b>`+(a?` · 이번 신청 후 <b class="${after<0?'neg':''}">${won(after)}원</b>${after<0?' ⚠ 예산 초과':''}`:'')};
+  $('#rd').onchange=()=>{fillC();bal()};$('#rc').onchange=()=>{fillI();bal()};$('#ra').oninput=bal;fillC();bal();
+  try{const m=JSON.parse(localStorage.getItem('sh_payee')||'null');if(m){$('#ph').value=m.h||'';$('#pb').value=m.b||'';$('#pa').value=m.a||''}}catch(_){}
 }
 function compress(file,max=1280,q=.75){return new Promise((res,rej)=>{const img=new Image(),u=URL.createObjectURL(file);
   img.onload=()=>{let w=img.width,h=img.height;const r=Math.min(1,max/Math.max(w,h));w=Math.round(w*r);h=Math.round(h*r);
@@ -203,14 +218,16 @@ function compress(file,max=1280,q=.75){return new Promise((res,rej)=>{const img=
     URL.revokeObjectURL(u);cv.toBlob(b=>b?res(b):rej(new Error('압축 실패')),'image/jpeg',q)};
   img.onerror=()=>rej(new Error('이미지를 읽을 수 없습니다. JPG/PNG 사진을 선택하세요.'));img.src=u})}
 async function submitReq(){
-  const btn=$('#reqBtn'),f=$('#rf').files[0],amt=+$('#ra').value,desc=$('#rdesc').value.trim();
+  const btn=$('#reqBtn'),f=$('#rf').files[0],amt=+$('#ra').value,desc=$('#rdesc').value.trim(),ph=$('#ph').value.trim(),pb=$('#pb').value.trim(),pa=$('#pa').value.trim();
   if(!amt||amt<=0)return toast('금액을 입력하세요.',true);if(!desc)return toast('적요를 입력하세요.',true);if(!f)return toast('영수증 사진을 첨부하세요.',true);
+  if(!ph||!pb||!pa)return toast('입금받을 예금주·은행·계좌번호를 입력하세요.',true);
   btn.disabled=true;btn.textContent='올리는 중…';
   try{
     const blob=await compress(f);const path=`${S.me.user_id}/${S.idem}.jpg`;
     const up=await sb.storage.from('receipts').upload(path,blob,{contentType:'image/jpeg',upsert:false});
     if(up.error&&!/exists|Duplicate/i.test(up.error.message))throw up.error;
-    await rpc('submit_expense',{p_year:S.year,p_dept:+$('#rd').value,p_cat:+$('#rc').value,p_item:$('#ri').value?+$('#ri').value:null,p_amount:amt,p_description:desc,p_note:$('#rn').value.trim()||null,p_date:$('#rdt').value,p_receipt_path:path,p_idem:S.idem});
+    await rpc('submit_expense',{p_year:S.year,p_dept:+$('#rd').value,p_cat:+$('#rc').value,p_item:$('#ri').value?+$('#ri').value:null,p_amount:amt,p_description:desc,p_note:$('#rn').value.trim()||null,p_date:$('#rdt').value,p_receipt_path:path,p_payee_holder:ph,p_payee_bank:pb,p_payee_account:pa,p_idem:S.idem});
+    try{if($('#pr').checked)localStorage.setItem('sh_payee',JSON.stringify({h:ph,b:pb,a:pa}));else localStorage.removeItem('sh_payee')}catch(_){}
     S.idem=null;toast('신청되었습니다.');await loadYear();renderTabs();S.tab='list';S.f.mine=true;renderTabs();render();
   }catch(e){if(e&&e.message&&!e.code)toast(e.message,true);btn.disabled=false;btn.textContent='신청'}
 }
@@ -223,7 +240,7 @@ function renderList(){
     a.push(`<button class="btn btn-ghost btn-sm" data-act="receipt" data-id="${e.id}">영수증</button>`);
     if(!e.deleted_at){
       if(e.status==='requested'&&canProcess(e))a.push(`<button class="btn btn-green btn-sm" data-act="approve" data-id="${e.id}">승인</button><button class="btn btn-danger btn-sm" data-act="reject" data-id="${e.id}">반려</button>`);
-      if(e.status==='approved'&&canProcess(e))a.push(`<button class="btn btn-gold btn-sm" data-act="paid" data-id="${e.id}">입금완료</button>`);
+      if((e.status==='approved'||e.status==='requested')&&canProcess(e)&&isMoney())a.push(`<button class="btn btn-gold btn-sm" data-tab="pay">입금관리</button>`);
       if(e.status==='requested'&&mine)a.push(`<button class="btn btn-ghost btn-sm" data-act="cancel" data-id="${e.id}">취소</button>`);
       a.push(`<button class="btn btn-ghost btn-sm" data-act="print" data-id="${e.id}">인쇄</button>`);
       if(isAdmin())a.push(`<button class="btn btn-ghost btn-sm" data-act="edit" data-id="${e.id}">수정</button><button class="btn btn-ghost btn-sm" data-act="del" data-id="${e.id}">삭제</button>`);
@@ -246,7 +263,6 @@ async function act(a,id){
     if(a==='edit')return editModal(e);
     if(a==='approve'){await rpc('approve_expense',{p_id:e.id});toast('승인했습니다.')}
     if(a==='reject'){const r=prompt('반려 사유를 입력하세요.');if(!r)return;await rpc('reject_expense',{p_id:e.id,p_reason:r});toast('반려했습니다.')}
-    if(a==='paid'){await rpc('mark_paid',{p_id:e.id});toast('입금완료 처리했습니다.')}
     if(a==='cancel'){if(!confirm('이 신청을 취소할까요?'))return;await rpc('cancel_expense',{p_id:e.id});toast('취소했습니다.')}
     if(a==='del'){if(!confirm('삭제(휴지통 이동)할까요?'))return;await rpc('admin_delete_expense',{p_id:e.id});toast('휴지통으로 이동했습니다.')}
     if(a==='restore'){await rpc('admin_restore_expense',{p_id:e.id});toast('복구했습니다.')}
@@ -374,12 +390,69 @@ function setYear(){
   <table class="tbl"><tbody>${S.years.map(y=>`<tr><td><b>${y.year}년</b></td><td>${y.locked?'🔒 마감':'진행 중'}</td><td><button class="btn btn-ghost btn-sm" data-act="lock" data-id="${y.year}">${y.locked?'마감 해제':'마감하기'}</button></td></tr>`).join('')}</tbody></table></div></div>`;
 }
 
+
+/* ───── 입금관리 (회계·관리자) ───── */
+const DAY=86400000;
+function payDays(g){return Math.floor((Date.now()-new Date(g.oldest).getTime())/DAY)}
+function usableAccts(){return S.accts.filter(a=>a.active&&(isAdmin()||a.owner_user_id===S.me.user_id))}
+function payPopup(){
+  const tot=S.pay.reduce((s,g)=>s+ +g.total,0),late=S.pay.filter(g=>payDays(g)>=7);
+  const m=modal(`<h3>💸 입금 대기 ${S.pay.length}개 계좌 · 총 ${won(tot)}원</h3>
+  ${late.length?`<div style="background:#f8d7da;color:var(--red);padding:8px 10px;border-radius:6px;font-weight:700;margin-bottom:10px">⚠ 신청 후 7일이 지나도 입금되지 않은 건이 ${late.length}개 계좌에 있습니다. 서둘러 처리해 주세요.</div>`:''}
+  <div class="tblwrap"><table class="tbl"><thead><tr><th>예금주</th><th>은행 / 계좌번호</th><th class="num">건수</th><th class="num">금액</th><th>경과</th></tr></thead><tbody>
+  ${S.pay.map(g=>`<tr><td>${esc(g.account_holder)}</td><td>${esc(g.bank_name)} ${esc(g.account_no)}</td><td class="num">${g.cnt}</td><td class="num">${won(g.total)}</td><td class="${payDays(g)>=7?'neg':''}">${payDays(g)}일</td></tr>`).join('')}</tbody></table></div>
+  <p class="note">완료하기 전까지 로그인할 때마다 이 알림이 표시됩니다.</p>
+  <div class="actions"><button class="btn btn-ghost" id="pp-close">나중에</button><button class="btn btn-primary" id="pp-go">확인하고 입금관리로 이동</button></div>`);
+  m.querySelector('#pp-close').onclick=()=>m.remove();
+  m.querySelector('#pp-go').onclick=()=>{m.remove();S.tab='pay';renderTabs();render()};
+}
+function renderPay(){
+  const ua=usableAccts();if(!S.pickAcct||!ua.some(a=>a.id===S.pickAcct))S.pickAcct=ua[0]?.id||null;
+  const ex=id=>S.expenses.find(e=>e.id===id);
+  const tot=S.pay.reduce((s,g)=>s+ +g.total,0);
+  const balOf=id=>S.bal.find(b=>b.account_id===id)?.balance??0;
+  const ed=S.acctEdit?S.accts.find(a=>a.id===S.acctEdit):null;
+  $('#main').innerHTML=`
+  <div class="card"><div class="card-head"><h3>입금 대기 (${S.pay.length}개 계좌 · ${won(tot)}원)</h3>
+    <div class="filters"><label style="font-size:12px">출금 계좌</label><select id="pacct">${ua.map(a=>`<option value="${a.id}" ${a.id===S.pickAcct?'selected':''}>${esc(a.label)} (${esc(a.bank_name)} ${esc(a.account_no)}) · 잔액 ${won(balOf(a.id))}원</option>`).join('')||'<option value="">등록된 계좌 없음</option>'}</select>
+    <button class="btn btn-green btn-sm" data-act="pall" ${S.pay.length&&S.pickAcct?'':'disabled'}>전체 입금완료</button></div></div>
+  ${S.pay.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>예금주</th><th>은행 / 계좌번호</th><th class="num">건수</th><th class="num">금액</th><th>내역</th><th>경과</th><th></th></tr></thead><tbody>
+  ${S.pay.map((g,i)=>`<tr><td><b>${esc(g.account_holder)}</b></td><td>${esc(g.bank_name)} ${esc(g.account_no)} <button class="btn btn-ghost btn-sm" data-act="pcopy" data-i="${i}">복사</button></td><td class="num">${g.cnt}</td><td class="num"><b>${won(g.total)}</b></td>
+  <td style="font-size:12px">${g.expense_ids.map(id=>{const e=ex(id);return e?`${esc(dn(e.dept_id))}·${esc(cn(e.category_id))} ${esc(e.description)} ${won(e.amount)}원`:'#'+id}).join('<br>')}</td>
+  <td class="${payDays(g)>=7?'neg':''}">${payDays(g)}일${payDays(g)>=7?' ⚠':''}</td><td><button class="btn btn-gold btn-sm" data-act="pgroup" data-i="${i}" ${S.pickAcct?'':'disabled'}>입금완료</button></td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">입금 대기 중인 건이 없습니다. 👍</div>'}
+  <div class="card-body"><p class="note">계좌로 직접 입금한 뒤 [입금완료]를 누르면 선택한 출금 계좌의 출금 내역에 자동으로 기록되고, 지출 상태가 입금완료로 바뀝니다. 승인 단계는 따로 거치지 않아도 됩니다.</p></div></div>
+  <div class="card"><div class="card-head"><h3>내 계좌 관리${isAdmin()?' (관리자: 전체)':''}</h3></div>
+  <div class="tblwrap"><table class="tbl"><thead><tr><th>구분</th><th>이름</th><th>은행 / 계좌번호</th><th>예금주</th><th class="num">잔액</th><th></th></tr></thead><tbody>
+  ${S.accts.filter(a=>isAdmin()||a.owner_user_id===S.me.user_id).map(a=>`<tr><td>${a.kind==='main'?'총괄':'개인'}${a.active?'':' (사용중지)'}</td><td>${esc(a.label)}</td><td>${esc(a.bank_name)} ${esc(a.account_no)}</td><td>${esc(a.holder)}</td><td class="num">${won(balOf(a.id))}</td><td>${a.kind==='main'&&!isAdmin()?'':`<button class="btn btn-ghost btn-sm" data-act="acctedit" data-id="${a.id}">수정</button>`}</td></tr>`).join('')||'<tr><td colspan="6" class="empty">등록된 계좌가 없습니다. 아래에서 사용할 계좌를 등록하세요.</td></tr>'}</tbody></table></div>
+  <div class="card-body"><b style="font-size:12px">${ed?'계좌 수정':'계좌 등록'}</b>
+  <div class="grid2" style="margin-top:8px"><div class="field"><label>이름(구분용)</label><input id="al" value="${esc(ed?.label||'')}" placeholder="예: 1청 회계 계좌"></div><div class="field"><label>은행</label><input id="ab" value="${esc(ed?.bank_name||'')}"></div></div>
+  <div class="grid2"><div class="field"><label>계좌번호</label><input id="an" value="${esc(ed?.account_no||'')}" inputmode="numeric"></div><div class="field"><label>예금주</label><input id="ah" value="${esc(ed?.holder||'')}"></div></div>
+  <button class="btn btn-primary btn-sm" data-act="acctsave">${ed?'수정 저장':'등록'}</button>${ed?' <button class="btn btn-ghost btn-sm" data-act="acctcancel">취소</button>':''}</div></div>`;
+  const pa=$('#pacct');if(pa)pa.onchange=e=>{S.pickAcct=+e.target.value||null};
+}
+async function payAct(a,i){
+  try{
+    if(a==='pcopy'){const g=S.pay[+i];try{await navigator.clipboard.writeText(g.account_no);toast('계좌번호를 복사했습니다.')}catch(_){toast(g.account_no)}return}
+    if(a==='pgroup'||a==='pall'){
+      const groups=a==='pall'?S.pay:[S.pay[+i]],ids=groups.flatMap(g=>g.expense_ids),sum=groups.reduce((s,g)=>s+ +g.total,0);
+      const acct=S.accts.find(x=>x.id===S.pickAcct);if(!acct)return toast('출금 계좌를 선택하세요.',true);
+      if(!confirm(`${groups.length}개 계좌 · ${ids.length}건 · 총 ${won(sum)}원을\n[${acct.label}]에서 입금 완료로 처리할까요?\n(실제 이체를 마친 뒤에 눌러 주세요)`))return;
+      const n=await rpc('pay_expenses',{p_ids:ids,p_account:acct.id});toast(`${n}건 입금완료 처리했습니다.`);
+    }
+    if(a==='acctsave'){const ed=S.acctEdit;await rpc('save_account',{p_id:ed||null,p_label:$('#al').value,p_bank:$('#ab').value,p_no:$('#an').value,p_holder:$('#ah').value});S.acctEdit=null;toast('저장했습니다.')}
+    if(a==='acctedit'){S.acctEdit=+i;return renderPay()}
+    if(a==='acctcancel'){S.acctEdit=null;return renderPay()}
+    await loadStatic();await loadYear();renderTabs();render();
+  }catch(_){}
+}
+
 /* ───── 이벤트 ───── */
 document.addEventListener('click',async ev=>{
   const t=ev.target.closest('[data-tab],[data-sub],[data-act]');if(!t)return;
   if(t.dataset.tab){S.tab=t.dataset.tab;renderTabs();return render()}
   if(t.dataset.sub){S.sub=t.dataset.sub;return renderSet()}
   const a=t.dataset.act,id=t.dataset.id;
+  if(['pcopy','pgroup','pall','acctsave','acctedit','acctcancel'].includes(a))return payAct(a,t.dataset.i??id);
   if(['catadd','catren','cattog','itadd','itedit','itdel'].includes(a))return setAct(a,id);
   if(a==='aprm'){S.apRows.splice(+id,1);return S.apPaint()}
   if(a==='lock'){const y=S.years.find(v=>v.year===+id);try{await rpc('set_year_lock',{p_year:y.year,p_locked:!y.locked});await loadStatic();await loadYear();renderTabs();renderSet()}catch(_){}return}
