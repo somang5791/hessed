@@ -565,13 +565,18 @@ function annModal(a){
     try{
       if(a)await rpc('update_announcement',{p_id:a.id,p_title:m.querySelector('#at').value,p_body:m.querySelector('#ab').value,p_popup:m.querySelector('#ap').checked,p_expires:m.querySelector('#ae').value||null,p_active:m.querySelector('#aa').checked,p_roles:roles,p_level:lvOf()});
       else await rpc('post_announcement',{p_title:m.querySelector('#at').value,p_body:m.querySelector('#ab').value,p_popup:m.querySelector('#ap').checked,p_expires:m.querySelector('#ae').value||null,p_roles:roles,p_level:lvOf()});
-      m.remove();toast('저장했습니다.');await loadStatic();renderTabs();render()}catch(_){}};
+      m.remove();toast('저장했습니다.');const before=new Set((S.anns||[]).map(x=>x.id));await loadStatic();renderTabs();render();
+      if(!a&&m.querySelector('#ap').checked){const n=(S.anns||[]).find(x=>!before.has(x.id)&&x.created_by===S.me.user_id);if(n){annPopup([n]);toast('작성한 공지의 팝업 미리보기입니다. 다른 사용자에게는 다음 로그인 때(또는 약 1.5분 내) 표시됩니다.')}}}catch(_){}};
 }
 function annHidden(){try{return JSON.parse(localStorage.getItem('sh_annhide_'+S.me.user_id)||'{}')}catch(_){return {}}}
 function annHide(list,ms){const h=annHidden(),now=Date.now();Object.keys(h).forEach(k=>{if(h[k]<=now)delete h[k]});list.forEach(a=>h[a.id+':'+(a.updated_at||'')]=now+ms);try{localStorage.setItem('sh_annhide_'+S.me.user_id,JSON.stringify(h))}catch(_){}}
-function annPopup(){
+const ANN_SEEN=new Set();
+function annPopup(forced,poll){
+  if(document.querySelector('#an-x')&&!forced)return;   // 이미 공지 팝업이 열려 있으면 중복 표시 안 함
   const h=annHidden(),now=Date.now(),rank={red:0,yellow:1,green:2};
-  const un=unreadAnn().filter(a=>!(h[a.id+':'+(a.updated_at||'')]>now)).sort((x,y)=>rank[x.level||'green']-rank[y.level||'green']);if(!un.length)return;
+  let un=forced||unreadAnn().filter(a=>!(h[a.id+':'+(a.updated_at||'')]>now)&&!(poll&&ANN_SEEN.has(a.id+':'+(a.updated_at||''))));
+  un=[...un].sort((x,y)=>rank[x.level||'green']-rank[y.level||'green']);if(!un.length)return;
+  un.forEach(a=>ANN_SEEN.add(a.id+':'+(a.updated_at||'')));
   const top=un[0].level||'green',[c0,bg0]=LVC[top];
   const m=modal(`<h3 style="color:${c0};border-bottom:3px solid ${c0};padding-bottom:6px">📢 공지사항</h3>${un.map(a=>{const [c,bg]=LVC[a.level||'green'];return `<div style="border-left:5px solid ${c};background:${bg};padding:8px 10px;margin:8px 0;border-radius:4px"><span class="lv lv-${a.level||'green'}">${LV.find(x=>x[0]===(a.level||'green'))[1]}</span> <b>${esc(a.title)}</b><div class="note">${esc(pn(a.created_by))} · ${a.created_at.slice(0,10)}</div><div style="white-space:pre-wrap;margin-top:4px">${esc(a.body)}</div></div>`}).join('')}
   <div class="actions" style="flex-wrap:wrap"><button class="btn btn-ghost" id="an-week">일주일간 보지 않고 닫기</button><button class="btn btn-ghost" id="an-day">오늘은 더이상 보지 않고 닫기</button><button class="btn btn-primary" id="an-x">닫기</button></div>`);
@@ -712,7 +717,7 @@ document.addEventListener('click',ev=>{if(ev.target.id==='reqBtn')submitReq()});
 $('#lf').addEventListener('submit',e=>{e.preventDefault();login()});
 try{const v=localStorage.getItem('sh_id');if(v)$('#lid').value=v;else $('#lrem').checked=false;$('#lkeep').checked=KEEP()}catch(_){}
 $('#logoutBtn').onclick=async()=>{await sb.auth.signOut();S.me=null;$('#app').style.display='none';$('#login').style.display='block';$('#lpw').value=''};
-$('#refreshBtn').onclick=async()=>{await reload();toast('새로고침했습니다.')};
+$('#refreshBtn').onclick=async()=>{await reload();toast('새로고침했습니다.');annPopup()};
 $('#yearSel').onchange=async e=>{S.year=+e.target.value;await loadYear();renderTabs();render()};
 boot();
 
@@ -1050,6 +1055,50 @@ function settleModel(qs){
    body,notes:['1. 연간 예산 범위 내에서 절감 운용되어야 하며 부득이 예산 초과시에는 절차에 의한 추가예산 배정을 받아야 합니다.','2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다.']};
 }
 
+
+/* ── 날짜 입력 보정: 연도 4자리(2000~2099), YYYY-MM-DD 형식만 허용 ── */
+(function(){
+  const DMIN='2000-01-01',DMAX='2099-12-31',MSG='날짜는 연도 4자리로 정확히 입력하세요. (예: 2026-11-13)';
+  const lim=t=>{if(t&&t.type==='date'){t.min=DMIN;t.max=DMAX}};
+  document.addEventListener('focusin',e=>lim(e.target));
+  const fix=e=>{const t=e.target;if(!t||t.type!=='date')return;const v=t.value;
+    if(v&&(!/^\d{4}-\d{2}-\d{2}$/.test(v)||v<DMIN||v>DMAX)){t.value='';toast(MSG,true)}};
+  document.addEventListener('input',fix);document.addEventListener('change',fix);
+  document.addEventListener('focusout',e=>{const t=e.target;if(t&&t.type==='date'&&t.validity&&t.validity.badInput){t.value='';toast(MSG,true)}});
+})();
+
+/* ── 자동 로그아웃: 15분 무작업 시, 만료 60초 전부터 카운트다운 팝업 ── */
+(function(){
+  const IDLE=15*60*1000,WARN=60*1000;let last=Date.now(),pop=null;
+  const act=()=>{if(pop)return;last=Date.now()};      // 팝업이 떠 있을 때는 [계속 사용] 버튼으로만 연장
+  ['mousemove','mousedown','keydown','touchstart','scroll','wheel'].forEach(ev=>window.addEventListener(ev,act,{passive:true,capture:true}));
+  async function out(){
+    if(pop){pop.remove();pop=null}
+    document.querySelectorAll('.modal-bg').forEach(x=>x.remove());
+    try{await sb.auth.signOut()}catch(_){}
+    S.me=null;$('#app').style.display='none';$('#login').style.display='block';$('#lpw').value='';
+    toast('15분 동안 작업이 없어 자동 로그아웃되었습니다.',true);
+  }
+  setInterval(()=>{
+    if(!S.me)return;
+    const left=IDLE-(Date.now()-last);
+    if(left<=0)return out();
+    if(left<=WARN){
+      if(!pop){pop=modal(`<h3 style="color:var(--red)">⏱ 자동 로그아웃 예정</h3><p>장시간 작업이 없어 <b id="idle-s" style="font-size:20px;color:var(--red)">60</b>초 후 자동으로 로그아웃됩니다.</p><div class="actions"><button class="btn btn-ghost" id="idle-out">지금 로그아웃</button><button class="btn btn-primary" id="idle-stay">계속 사용</button></div>`);
+        pop.querySelector('#idle-stay').onclick=()=>{pop.remove();pop=null;last=Date.now()};
+        pop.querySelector('#idle-out').onclick=()=>out()}
+      const e=pop&&pop.querySelector('#idle-s');if(e)e.textContent=Math.max(0,Math.ceil(left/1000));
+    }else if(pop){pop.remove();pop=null}
+  },1000);
+  window.__idleTest={set:ms=>{last=Date.now()-(IDLE-ms)}};
+})();
+
+/* ── 공지 팝업: 로그인 중에도 새 공지를 주기적으로 확인해 팝업 표시 ── */
+setInterval(async()=>{
+  if(!S.me||document.hidden)return;
+  try{const [an,rd]=await Promise.all([sb.from('announcements').select('*').order('id',{ascending:false}),sb.from('announcement_reads').select('announcement_id')]);
+    if(an.error||rd.error)return;S.anns=an.data||[];S.reads=new Set((rd.data||[]).map(x=>x.announcement_id));renderTabs();annPopup(null,true)}catch(_){}
+},90000);
 </script>
 </body>
 </html>
