@@ -384,7 +384,7 @@ function itemModal(it,catId){
 }
 async function setAct(a,id){
   try{
-    if(a==='mgsave'){const ids=[...document.querySelectorAll('.mgx:checked')].map(x=>+x.value);await rpc('set_dept_merge',{p_depts:ids});toast('저장했습니다.')}
+    if(a==='mgsave'){const ids=[...document.querySelectorAll('.mgx:checked')].map(x=>+x.value);await rpc('set_dept_merge',{p_depts:ids});toast('저장했습니다.');await loadStatic();S.plan=null;renderTabs();render()}
     if(a==='dcsave'){for(const d of S.depts){const ids=[...document.querySelectorAll(`.dcx[data-d="${d.id}"]:checked`)].map(x=>+x.dataset.c).concat(S.cats.filter(c=>!c.active&&okCombo(d.id,c.id)).map(c=>c.id));await rpc('set_dept_categories',{p_dept:d.id,p_cats:ids})}toast('저장했습니다.')}
     if(a==='catadd'){const n=prompt('새 항 이름');if(!n)return;await rpc('upsert_category',{p_id:null,p_name:n})}
     if(a==='catren'){const c=S.cats.find(x=>x.id===+id),n=prompt('항 이름',c.name);if(!n)return;await rpc('upsert_category',{p_id:c.id,p_name:n,p_active:c.active})}
@@ -887,9 +887,21 @@ function planRowHTML(r,i,ro){
   <td>${esc(nm)}${r.kind==='income'&&!r.icat?' ':''}</td><td>${esc(it)||'<span class="note">(항 전체)</span>'}</td>
   ${amt('a')}${amt('b')}${amt('c1')}${amt('c2')}<td class="num pc" data-i="${i}" data-k="c"></td>${amt('d')}<td class="num pc" data-i="${i}" data-k="db"></td><td class="num pc" data-i="${i}" data-k="dc"></td></tr>`;
 }
+function planBodyHTML(ro){
+  const p=S.plan,out=[];
+  [['income','수입 부문 (수입 계정항목)','#e8f1ff','#1d4ed8'],['expense','지출 부문 (지출 계정항목)','#fdeceb','#b91c1c']].forEach(([k,lab,bg,fg])=>{
+    const idx=p.rows.map((r,i)=>i).filter(i=>p.rows[i].kind===k);if(!idx.length)return;
+    out.push(`<tr class="psec"><td colspan="11" style="background:${bg};color:${fg};font-weight:800;border-left:5px solid ${fg};padding:9px 10px">${lab}</td></tr>`);
+    idx.forEach(i=>out.push(planRowHTML(p.rows[i],i,ro)));
+    out.push(`<tr class="psub" data-kind="${k}" style="background:${bg};font-weight:700"><td colspan="3" style="color:${fg}">${k==='income'?'수입 합계(1)':'지출 합계(2)'}</td>${['a','b','c1','c2','c','d','db','dc'].map(f=>`<td class="num" data-sf="${f}"></td>`).join('')}</tr>`)});
+  return out.join('');
+}
 function planCalc(){
   const p=S.plan;document.querySelectorAll('.pc').forEach(td=>{const r=p.rows[+td.dataset.i];if(!r)return;const c=r.c1+r.c2;td.textContent=won(td.dataset.k==='c'?c:td.dataset.k==='db'?r.d-r.b:r.d-c)});
-  const m=planModel(),f=$('#planfoot');if(f)f.innerHTML=m.body.filter(r=>r[0].cs===3).map(r=>`<tr>${r.map((c,i)=>i===0?`<th colspan="3" style="text-align:left;background:${c.bg}">${esc(c.v)}</th>`:`<td class="num" style="background:${c.bg};font-weight:700">${won(c.v)}</td>`).join('')}</tr>`).join('');
+  document.querySelectorAll('tr.psub').forEach(tr=>{const rs=p.rows.filter(r=>r.kind===tr.dataset.kind),S_=f=>rs.reduce((a,r)=>a+r[f],0);
+    const v={a:S_('a'),b:S_('b'),c1:S_('c1'),c2:S_('c2'),c:S_('c1')+S_('c2'),d:S_('d')};v.db=v.d-v.b;v.dc=v.d-v.c;
+    tr.querySelectorAll('[data-sf]').forEach(td=>td.textContent=won(v[td.dataset.sf]))});
+  const m=planModel(),f=$('#planfoot');if(f)f.innerHTML=m.body.filter(r=>r[0].cs===3).slice(-1).map(r=>`<tr>${r.map((c,i)=>i===0?`<th colspan="3" style="text-align:left;background:${c.bg}">${esc(c.v)}</th>`:`<td class="num" style="background:${c.bg};font-weight:700">${won(c.v)}</td>`).join('')}</tr>`).join('');
 }
 async function planSave(quiet){
   const p=S.plan,y=S.year;if(!isAdmin()||p.dept===0)return;
@@ -908,7 +920,7 @@ function renderPlan(){
   <div class="card-body"><div class="filters"><select id="pd"><option value="0" ${p.dept===0?'selected':''}>전체 부서 (합계)</option>${viewDepts().map(d=>`<option value="${d.id}" ${d.id===p.dept?'selected':''}>${esc(dName(d.id))}</option>`).join('')}</select></div>
   ${ro?`<p class="note">${p.dept===0?'전체 부서의 예산을 항·목별로 합산한 화면입니다. 열람·인쇄·엑셀 전용이며, 수정은 부서를 선택해서 하세요.':'예산 수립은 관리자만 수정할 수 있습니다. (열람·출력만 가능)'}</p>`:'<p class="note">[설정]의 지출·수입 계정항목이 자동으로 이 표에 나타납니다. <b>금액 칸을 클릭해 입력하면 바로 저장</b>되고 예산·지출 현황에 반영됩니다. 수입 구간은 수입 계정항목, 지출 구간은 지출 계정항목으로 구성되며, 인쇄·엑셀에는 금액이 있는 줄만 나옵니다. 「전년도 불러오기」는 전전년 결산(A)·전년 예산(B)·전년 10/31까지 실적(가)을 채워줍니다.</p>'}</div>
   <div class="tblwrap"><table class="tbl" id="plantbl"><thead><tr><th>구분</th><th>항(대분류)</th><th>목(소분류)</th><th class="num">${y-2}년 금액(A)</th><th class="num">${y-1}년 예산액(B)</th><th class="num">10/31까지 지출(가)</th><th class="num">11/1~12/31 예상(나)</th><th class="num">${y-1}년 가결산(C)</th><th class="num">${y}년 예산(D)</th><th class="num">D-B</th><th class="num">D-C</th></tr></thead>
-  <tbody>${p.rows.length?p.rows.map((r,i)=>planRowHTML(r,i,ro)).join(''):'<tr><td colspan="11" class="empty">표시할 계정항목이 없습니다. [설정]에서 지출·수입 계정항목을 등록하세요.</td></tr>'}</tbody><tfoot id="planfoot"></tfoot></table></div></div>`;
+  <tbody>${p.rows.length?planBodyHTML(ro):'<tr><td colspan="11" class="empty">표시할 계정항목이 없습니다. [설정]에서 지출·수입 계정항목을 등록하세요.</td></tr>'}</tbody><tfoot id="planfoot"></tfoot></table></div></div>`;
   planCalc();
   $('#pd').onchange=()=>{planInit(+$('#pd').value);S.plan.y=y;renderPlan()};
   let tm;
