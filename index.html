@@ -116,6 +116,14 @@ async function rpc(fn,args){const {data,error}=await sb.rpc(fn,args||{});if(erro
 function isAdmin(){return S.me?.role==='admin'}
 const okCombo=(d,c)=>S.deptCats.some(x=>x.dept_id===d&&x.category_id===c);
 const catsOf=d=>S.cats.filter(c=>okCombo(d,c.id));
+/* 통합 부서(1·2·3청 등): 예산·현황·감사에서는 하나로 표시 */
+const mergedIds=()=>{const m=S.depts.filter(d=>d.merged).map(d=>d.id);return m.length>1?m:[]};
+const isM=d=>mergedIds().includes(+d);
+const memb=d=>isM(d)?mergedIds():[+d];
+const leadId=()=>mergedIds()[0];
+const dName=d=>isM(d)?mergedIds().map(i=>dn(i).replace('년회','')).join('·')+' 통합':dn(+d);
+const viewDepts=()=>S.depts.filter(d=>!isM(d.id)||d.id===leadId());
+const catsOfG=d=>S.cats.filter(c=>memb(d).some(x=>okCombo(x,c.id)));
 function isMoney(){return S.me?.role==='accountant'||S.me?.role==='admin'}
 function myScopes(){return S.scopes.filter(s=>s.user_id===S.me.user_id)}
 function hasScope(d,c){return isAdmin()||myScopes().some(s=>s.dept_id===d&&s.category_id===c)}
@@ -173,16 +181,16 @@ function pendingCount(){return S.expenses.filter(e=>!e.deleted_at&&e.status==='r
 
 /* ───── 현황 ───── */
 function renderDash(){
-  const catsFor=d=>catsOf(d.id).filter(c=>c.active||S.summary.some(r=>r.dept_id===d.id&&r.category_id===c.id&&(r.budget||r.used||r.pending)));
+  const catsFor=d=>catsOfG(d.id).filter(c=>c.active||S.summary.some(r=>r.dept_id===d.id&&r.category_id===c.id&&(r.budget||r.used||r.pending)));
   let h='';
   const tot={b:0,u:0,p:0};
-  S.depts.forEach(d=>{
+  viewDepts().forEach(d=>{
     let rows='',sb_=0,su=0,sp=0;
     catsFor(d).forEach(c=>{const r=S.summary.find(x=>x.dept_id===d.id&&x.category_id===c.id)||{budget:0,used:0,pending:0};
       const rem=r.budget-r.used-r.pending;sb_+=+r.budget;su+=+r.used;sp+=+r.pending;
       rows+=`<tr><td>${esc(c.name)}</td><td class="num">${won(r.budget)}</td><td class="num">${won(r.used)}</td><td class="num">${won(r.pending)}</td><td class="num ${rem<0?'neg':''}">${won(rem)}</td></tr>`});
     tot.b+=sb_;tot.u+=su;tot.p+=sp;
-    h+=`<div class="card"><div class="card-head"><h3>${esc(d.name)}</h3></div><div class="tblwrap"><table class="tbl"><thead><tr><th>항</th><th class="num">예산</th><th class="num">사용(승인·입금)</th><th class="num">대기(신청)</th><th class="num">잔액</th></tr></thead><tbody>${rows}<tr class="sum"><td>합계</td><td class="num">${won(sb_)}</td><td class="num">${won(su)}</td><td class="num">${won(sp)}</td><td class="num ${sb_-su-sp<0?'neg':''}">${won(sb_-su-sp)}</td></tr></tbody></table></div></div>`;
+    h+=`<div class="card"><div class="card-head"><h3>${esc(dName(d.id))}</h3></div><div class="tblwrap"><table class="tbl"><thead><tr><th>항</th><th class="num">예산</th><th class="num">사용(승인·입금)</th><th class="num">대기(신청)</th><th class="num">잔액</th></tr></thead><tbody>${rows}<tr class="sum"><td>합계</td><td class="num">${won(sb_)}</td><td class="num">${won(su)}</td><td class="num">${won(sp)}</td><td class="num ${sb_-su-sp<0?'neg':''}">${won(sb_-su-sp)}</td></tr></tbody></table></div></div>`;
   });
   $('#main').innerHTML=`<div class="card"><div class="card-body"><b>${S.year}년 전체</b> · 예산 ${won(tot.b)}원 · 사용 ${won(tot.u)}원 · 대기 ${won(tot.p)}원 · 잔액 <span class="${tot.b-tot.u-tot.p<0?'neg':''}">${won(tot.b-tot.u-tot.p)}원</span><p class="note">모든 부서의 예산·사용·잔액을 누구나 볼 수 있습니다. 잔액 = 예산 − 사용 − 대기. 차용 승인 내역은 예산에 반영되어 있습니다.</p></div></div>${h}`;
 }
@@ -307,7 +315,7 @@ function slotsBy(doc,o){return S.slots.filter(s=>s.doc_type===doc&&(s.owner_user
 /* 결재란 선택: 보는 사람이 담당회계면 본인 것 → 해당 부서 담당회계의 개별 결재란 → 기본 순서 */
 function slotsFor(doc,dept){
   const cand=[];if(S.me.role==='accountant')cand.push(S.me.user_id);
-  if(dept)S.profiles.filter(p=>p.role==='accountant'&&S.scopes.some(x=>x.user_id===p.user_id&&x.dept_id===+dept)).forEach(p=>cand.push(p.user_id));
+  if(dept)S.profiles.filter(p=>p.role==='accountant'&&S.scopes.some(x=>x.user_id===p.user_id&&memb(dept).includes(x.dept_id))).forEach(p=>cand.push(p.user_id));
   for(const o of cand){const r=slotsBy(doc,o);if(r.length)return r}
   return slotsBy(doc,null)}
 function printHTML(title,body,doc,dept){
@@ -357,9 +365,11 @@ function setAcct(){
    <div class="tblwrap"><table class="tbl"><thead><tr><th>목</th><th>적용 부서</th><th class="ctr">순서</th><th>상태</th><th></th></tr></thead><tbody>
    ${S.items.filter(i=>i.category_id===c.id).map(i=>`<tr><td>${esc(i.name)}${i.keywords&&i.keywords.length?`<div class="note">${esc(i.keywords.join(', '))}</div>`:''}</td><td>${i.dept_id?esc(dn(i.dept_id)):'전 부서 공통'}</td><td class="ctr">${i.sort_order}</td><td>${i.active?'사용':'<span class="neg">비활성</span>'}</td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-act="itedit" data-id="${i.id}">수정</button> <button class="btn btn-ghost btn-sm" data-act="itdel" data-id="${i.id}">삭제</button></td></tr>`).join('')||'<tr><td colspan="5" class="empty">등록된 목이 없습니다. (목이 없으면 항 단위로만 신청됩니다)</td></tr>'}
    </tbody></table></div><div class="card-body"><button class="btn btn-primary btn-sm" data-act="itadd" data-id="${c.id}">+ 목 추가</button></div></div>`;
+  const mgCard=`<div class="card"><div class="card-head"><h3>예산·감사 통합 부서</h3></div><div class="card-body"><p class="note">체크한 부서는 <b>예산 수립·부서별 현황·감사 보고서에서 하나의 계정으로 합쳐서</b> 표시하고 예산도 한 풀로 계산합니다. 지출 신청·권한·계정항목은 부서별 그대로입니다. 예산이 부서별로 나뉘면 체크를 해제하세요. (2개 이상 선택)</p>
+  <div style="display:flex;gap:14px;flex-wrap:wrap">${S.depts.map(d=>`<label class="chk"><input type="checkbox" class="mgx" value="${d.id}" ${d.merged?'checked':''}> ${esc(d.name)}</label>`).join('')}</div><br><button class="btn btn-primary btn-sm" data-act="mgsave">저장</button></div></div>`;
   const ac=S.cats.filter(c=>c.active);
   const dcCard=`<div class="card"><div class="card-head"><h3>부서별 사용 항</h3></div><div class="card-body"><p class="note">부서마다 사용하는 항을 선택합니다. 이미 예산·지출이 있는 항은 해제할 수 없습니다.</p><div class="tblwrap"><table class="scopegrid"><tr><th>부서</th>${ac.map(c=>`<th>${esc(c.name)}</th>`).join('')}</tr>${S.depts.map(d=>`<tr><th>${esc(d.name)}</th>${ac.map(c=>`<td><input type="checkbox" class="dcx" data-d="${d.id}" data-c="${c.id}" ${okCombo(d.id,c.id)?'checked':''}></td>`).join('')}</tr>`).join('')}</table></div><br><button class="btn btn-primary btn-sm" data-act="dcsave">저장</button></div></div>`;
-  $('#subbody').innerHTML=`<p class="note"><b>지출</b>의 항(공동운영비 등)과 목을 설정합니다. 목의 「자동 매핑 키워드」를 넣어 두면 지출 신청 때 적요에서 목이 자동 선택됩니다. (수입 항목은 [수입 계정항목]에서 설정) 이미 사용된 목은 삭제 대신 비활성화하세요.</p>${dcCard}${S.cats.map(catRow).join('')}<button class="btn btn-gold" data-act="catadd">+ 항 추가</button>`;
+  $('#subbody').innerHTML=`<p class="note"><b>지출</b>의 항(공동운영비 등)과 목을 설정합니다. 목의 「자동 매핑 키워드」를 넣어 두면 지출 신청 때 적요에서 목이 자동 선택됩니다. (수입 항목은 [수입 계정항목]에서 설정) 이미 사용된 목은 삭제 대신 비활성화하세요.</p>${mgCard}${dcCard}${S.cats.map(catRow).join('')}<button class="btn btn-gold" data-act="catadd">+ 항 추가</button>`;
 }
 function itemModal(it,catId){
   const m=modal(`<h3>${it?'목 수정':'목 추가'}</h3><div class="field"><label>항</label><select id="mc">${S.cats.map(c=>`<option value="${c.id}" ${c.id===(it?it.category_id:+catId)?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -374,6 +384,7 @@ function itemModal(it,catId){
 }
 async function setAct(a,id){
   try{
+    if(a==='mgsave'){const ids=[...document.querySelectorAll('.mgx:checked')].map(x=>+x.value);await rpc('set_dept_merge',{p_depts:ids});toast('저장했습니다.')}
     if(a==='dcsave'){for(const d of S.depts){const ids=[...document.querySelectorAll(`.dcx[data-d="${d.id}"]:checked`)].map(x=>+x.dataset.c).concat(S.cats.filter(c=>!c.active&&okCombo(d.id,c.id)).map(c=>c.id));await rpc('set_dept_categories',{p_dept:d.id,p_cats:ids})}toast('저장했습니다.')}
     if(a==='catadd'){const n=prompt('새 항 이름');if(!n)return;await rpc('upsert_category',{p_id:null,p_name:n})}
     if(a==='catren'){const c=S.cats.find(x=>x.id===+id),n=prompt('항 이름',c.name);if(!n)return;await rpc('upsert_category',{p_id:c.id,p_name:n,p_active:c.active})}
@@ -711,7 +722,7 @@ const incIn=id=>id?S.incItems.find(i=>i.id===id)?.name||'':'';
 const NARROW={left:.25,right:.25,top:.75,bottom:.75,header:.3,footer:.3};
 const BG={head:'#EEECEA',inc:'#E6F4EC',exp:'#FDE8E6',sum:'#F7F6F2',rem:'#F5ECC8',d:'#FDF6D8'};
 const carryId=()=>S.incCats.find(c=>c.sys==='carry')?.id;
-const deptLabel=()=>S.rd?dn(+S.rd):'전체 부서';
+const deptLabel=()=>S.rd?dName(+S.rd):'전체 부서';
 const sum=(a,f)=>a.reduce((s,x)=>s+(+(typeof f==='function'?f(x):x[f])||0),0);
 function amtToKor(n){n=Math.floor(Number(n)||0);if(!n)return '영';const U=['','만','억','조'],D=['','일','이','삼','사','오','육','칠','팔','구'],P=['','십','백','천'];
   const blk=x=>{let s='';for(let i=3;i>=0;i--){const d=Math.floor(x/10**i)%10;if(!d)continue;s+=(d===1&&i>0?'':D[d])+P[i]}return s};
@@ -822,32 +833,31 @@ async function incAct(a,id){
 
 /* ── 공용: 부서 선택 막대 ── */
 function deptBar(extra){
-  return `<div class="filters"><select id="rdsel"><option value="">전체 부서</option>${S.depts.map(d=>`<option value="${d.id}" ${String(d.id)===String(S.rd)?'selected':''}>${esc(d.name)}</option>`).join('')}</select>${extra||''}</div>`}
+  return `<div class="filters"><select id="rdsel"><option value="">전체 부서</option>${viewDepts().map(d=>`<option value="${d.id}" ${String(d.id)===String(S.rd)?'selected':''}>${esc(dName(d.id))}</option>`).join('')}</select>${extra||''}</div>`}
 function wireDept(fn){const s=$('#rdsel');if(s)s.onchange=()=>{S.rd=s.value;fn()}}
-const inDept=r=>!S.rd||r.dept_id===+S.rd;
+const inDept=r=>!S.rd||memb(+S.rd).includes(r.dept_id);
 const acctName=r=>r.kind==='expense'?cn(r.category_id)+(r.item_id?' / '+inm(r.item_id):''):incCn(r.inc_cat_id)+(r.inc_item_id?' / '+incIn(r.inc_item_id):'');
 const H=(v,o)=>Object.assign({v},o||{});
 const TH=(v,o)=>Object.assign({v,al:'c',b:true,bg:BG.head},o||{});
 
 /* ── 예산수립 ── 계정항목(지출·수입)과 자동 연동: 항·목이 설정에 있으면 바로 표에 나타남 */
-const planDn=d=>d===0?'전체 부서':dn(d);
+const planDn=d=>d===0?'전체 부서':dName(d);
 const pkey=(kind,c,i,ic,ii)=>[kind,c||0,i||0,ic||0,ii||0].join('|');
 function planBuild(d){
-  const saved=S.lines.filter(l=>l.dept_id===d),out=[],seen=new Set();
+  const mb=memb(d),saved=S.lines.filter(l=>mb.includes(l.dept_id)),out=[],seen=new Set();
   const add=(kind,c,i,ic,ii)=>{const k=pkey(kind,c,i,ic,ii);if(seen.has(k))return;seen.add(k);
     const l=saved.find(x=>pkey(x.kind,x.category_id,x.item_id,x.inc_cat_id,x.inc_item_id)===k);
     out.push({kind,cat:c||null,item:i||null,icat:ic||null,iitem:ii||null,a:+(l?.amt_a||0),b:+(l?.amt_b||0),c1:+(l?.amt_c1||0),c2:+(l?.amt_c2||0),d:+(l?.amt_d||0),note:l?.note||''})};
-  const expCats=catsOf(d).filter(c=>c.active),expItems=c=>S.items.filter(i=>i.active&&i.category_id===c.id&&(i.dept_id===null||i.dept_id===d));
+  const expCats=catsOfG(d).filter(c=>c.active),expItems=c=>S.items.filter(i=>i.active&&i.category_id===c.id&&(i.dept_id===null||mb.includes(i.dept_id)));
   const incCats=S.incCats.filter(c=>c.active).sort((x,y)=>x.sort_order-y.sort_order);
   incCats.forEach(c=>{const its=S.incItems.filter(i=>i.active&&i.category_id===c.id);if(its.length)its.forEach(i=>add('income',null,null,c.id,i.id));else add('income',null,null,c.id,null)});
-  expCats.forEach(c=>{const its=expItems(c);if(its.length)its.forEach(i=>add('income',c.id,i.id,null,null));else add('income',c.id,null,null,null)});
   expCats.forEach(c=>{const its=expItems(c);if(its.length)its.forEach(i=>add('expense',c.id,i.id,null,null));else add('expense',c.id,null,null,null)});
-  saved.forEach(l=>add(l.kind,l.category_id,l.item_id,l.inc_cat_id,l.inc_item_id));
+  saved.filter(l=>l.kind==='expense'||l.inc_cat_id).forEach(l=>add(l.kind,l.category_id,l.item_id,l.inc_cat_id,l.inc_item_id));
   return out.sort((x,y)=>(x.kind===y.kind?0:x.kind==='income'?-1:1));
 }
 function planInit(d){
   if(d===0){const m=new Map();
-    S.depts.forEach(dp=>planBuild(dp.id).forEach(r=>{const k=pkey(r.kind,r.cat,r.item,r.icat,r.iitem),t=m.get(k);if(!t)m.set(k,Object.assign({},r));else['a','b','c1','c2','d'].forEach(f=>t[f]+=r[f])}));
+    viewDepts().forEach(dp=>planBuild(dp.id).forEach(r=>{const k=pkey(r.kind,r.cat,r.item,r.icat,r.iitem),t=m.get(k);if(!t)m.set(k,Object.assign({},r));else['a','b','c1','c2','d'].forEach(f=>t[f]+=r[f])}));
     S.plan={dept:0,dirty:false,rows:[...m.values()].sort((x,y)=>(x.kind===y.kind?0:x.kind==='income'?-1:1))};return}
   S.plan={dept:d,dirty:false,rows:planBuild(d)};
 }
@@ -869,7 +879,7 @@ function planRowHTML(r,i,ro){
   const nm=r.icat?incCn(r.icat):cn(r.cat),it=r.icat?incIn(r.iitem):inm(r.item);
   const amt=f=>`<td><input class="pamt" data-i="${i}" data-f="${f}" inputmode="numeric" value="${r[f]?won(r[f]):''}" placeholder="0" style="width:100%;text-align:right"${dis}></td>`;
   return `<tr><td style="text-align:center"><span class="tag">${r.kind==='income'?'수입':'지출'}</span></td>
-  <td>${esc(nm)}${r.kind==='income'&&!r.icat?' <span class="note">(지출항)</span>':''}</td><td>${esc(it)||'<span class="note">(항 전체)</span>'}</td>
+  <td>${esc(nm)}${r.kind==='income'&&!r.icat?' ':''}</td><td>${esc(it)||'<span class="note">(항 전체)</span>'}</td>
   ${amt('a')}${amt('b')}${amt('c1')}${amt('c2')}<td class="num pc" data-i="${i}" data-k="c"></td>${amt('d')}<td class="num pc" data-i="${i}" data-k="db"></td><td class="num pc" data-i="${i}" data-k="dc"></td></tr>`;
 }
 function planCalc(){
@@ -885,13 +895,13 @@ async function planSave(quiet){
 }
 function renderPlan(){
   const y=S.year;
-  if(!S.plan||S.plan.y!==y){const d=S.plan?S.plan.dept:S.depts[0]?.id;planInit(d);S.plan.y=y}
+  if(!S.plan||S.plan.y!==y){const d=S.plan?S.plan.dept:viewDepts()[0]?.id;planInit(d);S.plan.y=y}
   const p=S.plan,ro=!isAdmin()||p.dept===0;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${y}년도 예산 수립 (예산계획서)</h3><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
    ${ro?'':`<span class="note" id="plst"></span><button class="btn btn-ghost btn-sm" id="pp">전년도 불러오기</button><button class="btn btn-primary btn-sm" id="psv">저장</button>`}
    <button class="btn btn-ghost btn-sm" id="ppr">인쇄</button><button class="btn btn-ghost btn-sm" id="pxl">엑셀</button></div></div>
-  <div class="card-body"><div class="filters"><select id="pd"><option value="0" ${p.dept===0?'selected':''}>전체 부서 (합계)</option>${S.depts.map(d=>`<option value="${d.id}" ${d.id===p.dept?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>
-  ${ro?`<p class="note">${p.dept===0?'전체 부서의 예산을 항·목별로 합산한 화면입니다. 열람·인쇄·엑셀 전용이며, 수정은 부서를 선택해서 하세요.':'예산 수립은 관리자만 수정할 수 있습니다. (열람·출력만 가능)'}</p>`:'<p class="note">[설정]의 지출·수입 계정항목이 자동으로 이 표에 나타납니다. <b>금액 칸을 클릭해 입력하면 바로 저장</b>되고 예산·지출 현황에 반영됩니다. 수입에는 수입 항목과 지출 항목이 함께 나오며, 인쇄·엑셀에는 금액이 있는 줄만 나옵니다. 「전년도 불러오기」는 전전년 결산(A)·전년 예산(B)·전년 10/31까지 실적(가)을 채워줍니다.</p>'}</div>
+  <div class="card-body"><div class="filters"><select id="pd"><option value="0" ${p.dept===0?'selected':''}>전체 부서 (합계)</option>${viewDepts().map(d=>`<option value="${d.id}" ${d.id===p.dept?'selected':''}>${esc(dName(d.id))}</option>`).join('')}</select></div>
+  ${ro?`<p class="note">${p.dept===0?'전체 부서의 예산을 항·목별로 합산한 화면입니다. 열람·인쇄·엑셀 전용이며, 수정은 부서를 선택해서 하세요.':'예산 수립은 관리자만 수정할 수 있습니다. (열람·출력만 가능)'}</p>`:'<p class="note">[설정]의 지출·수입 계정항목이 자동으로 이 표에 나타납니다. <b>금액 칸을 클릭해 입력하면 바로 저장</b>되고 예산·지출 현황에 반영됩니다. 수입 구간은 수입 계정항목, 지출 구간은 지출 계정항목으로 구성되며, 인쇄·엑셀에는 금액이 있는 줄만 나옵니다. 「전년도 불러오기」는 전전년 결산(A)·전년 예산(B)·전년 10/31까지 실적(가)을 채워줍니다.</p>'}</div>
   <div class="tblwrap"><table class="tbl" id="plantbl"><thead><tr><th>구분</th><th>항(대분류)</th><th>목(소분류)</th><th class="num">${y-2}년 금액(A)</th><th class="num">${y-1}년 예산액(B)</th><th class="num">10/31까지 지출(가)</th><th class="num">11/1~12/31 예상(나)</th><th class="num">${y-1}년 가결산(C)</th><th class="num">${y}년 예산(D)</th><th class="num">D-B</th><th class="num">D-C</th></tr></thead>
   <tbody>${p.rows.length?p.rows.map((r,i)=>planRowHTML(r,i,ro)).join(''):'<tr><td colspan="11" class="empty">표시할 계정항목이 없습니다. [설정]에서 지출·수입 계정항목을 등록하세요.</td></tr>'}</tbody><tfoot id="planfoot"></tfoot></table></div></div>`;
   planCalc();
@@ -911,12 +921,12 @@ async function planPull(){
   const p=S.plan,y=S.year,d=p.dept;
   try{
     const [r1,r2]=await Promise.all([rpc('report_rows',{p_year:y-1}),rpc('report_rows',{p_year:y-2})]);
-    const {data:bl}=await sb.from('budget_lines').select('*').eq('fiscal_year',y-1).eq('dept_id',d);
+    const {data:bl}=await sb.from('budget_lines').select('*').eq('fiscal_year',y-1).in('dept_id',memb(d));
     const rk=r=>pkey(r.kind,r.cat,r.item,r.icat,r.iitem);
     const cut=`${y-1}-10-31`;const agg={};const add=(k,f,v)=>{(agg[k]=agg[k]||{a:0,b:0,c1:0})[f]+=+v};
     const ak=r=>r.kind==='expense'?pkey('expense',r.category_id,r.item_id,0,0):pkey('income',0,0,r.inc_cat_id,r.inc_item_id);
-    r2.filter(r=>r.dept_id===d).forEach(r=>add(ak(r),'a',r.amount));
-    r1.filter(r=>r.dept_id===d&&r.dt<=cut).forEach(r=>add(ak(r),'c1',r.amount));
+    r2.filter(r=>memb(d).includes(r.dept_id)).forEach(r=>add(ak(r),'a',r.amount));
+    r1.filter(r=>memb(d).includes(r.dept_id)&&r.dt<=cut).forEach(r=>add(ak(r),'c1',r.amount));
     (bl||[]).forEach(l=>add(pkey(l.kind,l.category_id,l.item_id,l.inc_cat_id,l.inc_item_id),'b',l.amt_d));
     let upd=0;p.rows.forEach(r=>{const v=agg[rk(r)];if(v&&(v.a||v.b||v.c1)){r.a=v.a;r.b=v.b;r.c1=v.c1;upd++}});
     p.dirty=true;renderPlan();toast(`전년도 자료를 불러왔습니다. (${upd}줄) 저장해야 반영됩니다.`);
@@ -1014,7 +1024,7 @@ async function renderSettle(){
 function settleModel(qs){
   const y=S.year,cid=carryId(),months=qs.flatMap(q=>[3*q-2,3*q-1,3*q]);
   const ok=r=>(r.kind==='income'&&r.inc_cat_id===cid)||months.includes(+r.dt.slice(5,7));
-  const lines=S.lines.filter(l=>!S.rd||l.dept_id===+S.rd);
+  const lines=S.lines.filter(l=>(l.kind==='expense'||l.inc_cat_id)&&(!S.rd||memb(+S.rd).includes(l.dept_id)));
   const hasWhole={};lines.forEach(l=>{if(l.kind==='expense'&&!l.item_id)hasWhole['e|'+l.category_id]=1;if(l.kind==='income'&&!l.inc_cat_id&&!l.item_id)hasWhole['i|x'+l.category_id]=1;if(l.kind==='income'&&l.inc_cat_id&&!l.inc_item_id)hasWhole['i|'+l.inc_cat_id]=1});
   const K=(kind,c,it)=>{const base=(kind==='expense'?'e|':'i|')+c;return base+'|'+(hasWhole[base]?0:(it||0))};
   const map={};const g=(k,o)=>map[k]||(map[k]=Object.assign({a:0,b:0,c:0},o));
