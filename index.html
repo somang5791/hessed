@@ -321,7 +321,7 @@ function slotsFor(doc,dept){
 function printHTML(title,body,doc,dept){
   const sl=slotsFor(doc,dept);
   const box=sl.length?`<table class="ap"><tr>${sl.map(s=>`<th>${esc(s.label)}</th>`).join('')}</tr><tr>${sl.map(s=>`<td>${s.sign_img?`<img src="${esc(s.sign_img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(s.signer||'')}</td>`).join('')}</tr></table>`:'';
-  return `<html><head><meta charset="UTF-8"><title>${esc(title)}</title><style>@page{size:A4;margin:15mm}body{font-family:'Malgun Gothic',sans-serif;font-size:12px}h2{text-align:center;margin:10px 0 14px;font-size:20px}.ap{border-collapse:collapse;margin-left:auto}.ap th,.ap td{border:1px solid #000;min-width:60px;text-align:center;padding:3px 6px}.ap th{background:#eee}.ap td{height:46px}table.d{width:100%;border-collapse:collapse;margin-top:14px}table.d th,table.d td{border:1px solid #000;padding:7px 9px;text-align:left}table.d th{background:#f2f2f2;width:22%}</style></head><body>${box}<h2>${esc(title)}</h2>${body}</body></html>`;
+  return `<html><head><meta charset="UTF-8"><title>${esc(title)}</title><style>@page{size:A4;margin:19.05mm 17.78mm}body{font-family:'Malgun Gothic',sans-serif;font-size:12px}h2{text-align:center;margin:10px 0 14px;font-size:20px}.ap{border-collapse:collapse;margin-left:auto}.ap th,.ap td{border:1px solid #000;min-width:60px;text-align:center;padding:3px 6px}.ap th{background:#eee}.ap td{height:46px}table.d{width:100%;border-collapse:collapse;margin-top:14px}table.d th,table.d td{border:1px solid #000;padding:7px 9px;text-align:left}table.d th{background:#f2f2f2;width:22%}</style></head><body>${box}<h2>${esc(title)}</h2>${body}</body></html>`;
 }
 function doPrint(html){const f=document.createElement('iframe');f.style.cssText='position:fixed;right:0;bottom:0;width:0;height:0;border:0';document.body.appendChild(f);f.contentDocument.open();f.contentDocument.write(html);f.contentDocument.close();setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>f.remove(),2000)},300)}
 
@@ -772,7 +772,7 @@ async function mXLSX(m,fname){
     ws.getRow(r).height=isHead?30:19;r++});
   put(m.head,true);put(m.body,false);
   (m.notes||[]).forEach(x=>{r++;ws.mergeCells(r,1,r,n);const q=ws.getCell(r,1);q.value=x;q.font={size:9,color:{argb:'FF555555'}}});
-  ws.pageSetup={paperSize:9,orientation:m.land?'landscape':'portrait',margins:NARROW,fitToPage:true,fitToWidth:1,fitToHeight:m.fitH===false?0:1,horizontalCentered:true};
+  ws.pageSetup={paperSize:9,orientation:m.land?'landscape':'portrait',margins:{left:.7,right:.7,top:.75,bottom:.75,header:.3,footer:.3},fitToPage:true,fitToWidth:1,fitToHeight:m.fitH===false?0:1,horizontalCentered:true};
   const buf=await wb.xlsx.writeBuffer();const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));a.download=fname+'.xlsx';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 /* 인쇄: 숨은 iframe, 이미지 로딩 대기, (fit=true면 한 장에 맞춤 축소) */
@@ -780,15 +780,15 @@ const PCSS=`@page{size:A4 %O%;margin:%M%}*{box-sizing:border-box;-webkit-print-c
 .pg{font-size:10pt}.pg+.pg{page-break-before:always}.rtitle{text-align:center;font-size:16pt;font-weight:700;text-decoration:underline;letter-spacing:.08em;margin:2px 0 8px}
 .rhead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;font-size:9.5pt}.ap{border-collapse:collapse}.ap th,.ap td{border:1px solid #000;min-width:58px;text-align:center;padding:2px 5px;font-size:8.5pt}.ap th{background:#eee}.ap td{height:46px;vertical-align:bottom;font-size:8pt}
 table.rt{width:100%;border-collapse:collapse;table-layout:fixed}.rt th,.rt td{border:1px solid #000;padding:2px 4px;font-size:8.5pt;word-break:keep-all;overflow-wrap:anywhere}.rt th{background:#eeecea;text-align:center}.rnote{font-size:8pt;color:#333;margin-top:6px;line-height:1.6}
-.res th{background:#f0f0f0;width:80px}.res td,.res th{border:1px solid #000;padding:6px 8px;font-size:10.5pt}.res{width:100%;border-collapse:collapse;margin-bottom:12px}.rcpt{border:2px dashed #aaa;padding:8px;text-align:center}.rcpt img{max-width:100%;max-height:185mm;object-fit:contain}`;
+.res th{background:#f0f0f0;width:80px}.res td,.res th{border:1px solid #000;padding:6px 8px;font-size:10.5pt}.res{width:100%;border-collapse:collapse;margin-bottom:12px}.rcpt{border:2px dashed #aaa;padding:8px;text-align:center}.rcpt img{max-width:100%;max-height:160mm;object-fit:contain}`;
 async function printPages(pagesHtml,o){o=o||{};
-  const land=!!o.land,mar=o.res?'12mm':'19.05mm 6.35mm';
+  const land=!!o.land,mar='19.05mm 17.78mm';
   const css=PCSS.replace('%O%',land?'landscape':'portrait').replace('%M%',mar);
   const old=document.getElementById('_pf');if(old)old.remove();
   const f=document.createElement('iframe');f.id='_pf';f.style.cssText='position:fixed;left:-9999px;top:0;width:1100px;height:800px;border:0';document.body.appendChild(f);
   const d=f.contentDocument;d.open();d.write(`<!doctype html><html><head><meta charset="UTF-8"><title>${esc(o.title||'출력')}</title><style>${css}</style></head><body>${pagesHtml}</body></html>`);d.close();
   const imgs=[...d.images];if(imgs.length){toast('이미지를 불러오는 중…');await Promise.all(imgs.map(i=>i.complete?1:new Promise(r=>{i.onload=i.onerror=r})))}
-  if(o.fit){const mm=3.7795,W=((land?297:210)-12.7)*mm,H=((land?210:297)-38.1)*mm;
+  if(o.fit){const mm=3.7795,W=((land?297:210)-35.56)*mm,H=((land?210:297)-38.1)*mm;
     d.querySelectorAll('.pg').forEach(p=>{p.style.width=W+'px';let s=1;for(let i=0;i<4;i++){const h=p.getBoundingClientRect().height;if(h<=H*.995)break;s*=H/h*.985;p.style.zoom=s;p.style.width=(W/s)+'px'}})}
   setTimeout(()=>{f.contentWindow.focus();f.contentWindow.print()},250);
 }
@@ -848,6 +848,10 @@ const TH=(v,o)=>Object.assign({v,al:'c',b:true,bg:BG.head},o||{});
 /* ── 예산수립 ── 계정항목(지출·수입)과 자동 연동: 항·목이 설정에 있으면 바로 표에 나타남 */
 const planDn=d=>d===0?'전체 부서':dName(d);
 const pkey=(kind,c,i,ic,ii)=>[kind,c||0,i||0,ic||0,ii||0].join('|');
+function planSortRows(rows){
+  const rk=r=>r.kind==='income'?[0,(S.incCats.find(c=>c.id===r.icat)||{}).sort_order||0,r.icat||0]:[1,cn(r.cat)==='기타'?1:0,r.cat||0];
+  return rows.map((r,i)=>[r,i]).sort((x,y)=>{const a=rk(x[0]),b=rk(y[0]);for(let j=0;j<3;j++)if(a[j]!==b[j])return a[j]-b[j];return x[1]-y[1]}).map(x=>x[0]);
+}
 function planBuild(d){
   const mb=memb(d),saved=S.lines.filter(l=>mb.includes(l.dept_id)),out=[],seen=new Set();
   const add=(kind,c,i,ic,ii)=>{const k=pkey(kind,c,i,ic,ii);if(seen.has(k))return;seen.add(k);
@@ -858,12 +862,12 @@ function planBuild(d){
   incCats.forEach(c=>{const its=S.incItems.filter(i=>i.active&&i.category_id===c.id);if(its.length)its.forEach(i=>add('income',null,null,c.id,i.id));else add('income',null,null,c.id,null)});
   expCats.forEach(c=>{const its=expItems(c);if(its.length)its.forEach(i=>add('expense',c.id,i.id,null,null));else add('expense',c.id,null,null,null)});
   saved.filter(l=>l.kind==='expense'||l.inc_cat_id).forEach(l=>add(l.kind,l.category_id,l.item_id,l.inc_cat_id,l.inc_item_id));
-  return out.sort((x,y)=>(x.kind===y.kind?0:x.kind==='income'?-1:1));
+  return planSortRows(out);
 }
 function planInit(d){
   if(d===0){const m=new Map();
     viewDepts().forEach(dp=>planBuild(dp.id).forEach(r=>{const k=pkey(r.kind,r.cat,r.item,r.icat,r.iitem),t=m.get(k);if(!t)m.set(k,Object.assign({},r));else['a','b','c1','c2','d'].forEach(f=>t[f]+=r[f])}));
-    S.plan={dept:0,dirty:false,rows:[...m.values()].sort((x,y)=>(x.kind===y.kind?0:x.kind==='income'?-1:1))};return}
+    S.plan={dept:0,dirty:false,rows:planSortRows([...m.values()])};return}
   S.plan={dept:d,dirty:false,rows:planBuild(d)};
 }
 const nz=r=>r.a||r.b||r.c1||r.c2||r.d;
@@ -871,20 +875,27 @@ function planModel(){
   const p=S.plan,y=S.year,rows=p.rows;
   const inc=rows.filter(r=>r.kind==='income'),exp=rows.filter(r=>r.kind==='expense');
   const line=(r,lab)=>{const c=r.c1+r.c2;return [H(lab,{al:'c'}),H(r.icat?incCn(r.icat):cn(r.cat)),H(r.icat?incIn(r.iitem):inm(r.item)),H(r.a,{num:1}),H(r.b,{num:1}),H(r.c1,{num:1}),H(r.c2,{num:1}),H(c,{num:1,b:1}),H(r.d,{num:1,b:1,bg:BG.d}),H(r.d-r.b,{num:1}),H(r.d-c,{num:1})]};
+  const grp=(arr,lab)=>arr.map((r,i)=>{const cells=line(r,lab),key=r.icat?'i'+r.icat:'e'+r.cat;
+    const prev=i>0&&(arr[i-1].icat?'i'+arr[i-1].icat:'e'+arr[i-1].cat)===key;
+    let n=0;if(!prev)for(let j=i;j<arr.length&&(arr[j].icat?'i'+arr[j].icat:'e'+arr[j].cat)===key;j++)n++;
+    const out=[];
+    if(i===0)out.push(Object.assign(cells[0],{rs:arr.length,b:1}));
+    if(!prev){cells[1].rs=n;cells[1].b=1;out.push(cells[1])}
+    return out.concat(cells.slice(2))});
   const foot=(lab,arr,bg)=>{const c=sum(arr,'c1')+sum(arr,'c2');return [H(lab,{cs:3,b:1,bg}),H(sum(arr,'a'),{num:1,b:1,bg}),H(sum(arr,'b'),{num:1,b:1,bg}),H(sum(arr,'c1'),{num:1,b:1,bg}),H(sum(arr,'c2'),{num:1,b:1,bg}),H(c,{num:1,b:1,bg}),H(sum(arr,'d'),{num:1,b:1,bg}),H(sum(arr,'d')-sum(arr,'b'),{num:1,b:1,bg}),H(sum(arr,'d')-c,{num:1,b:1,bg})]};
   const rem=[H('잔액(1-2)',{cs:3,b:1,bg:BG.rem})].concat(['a','b','c1','c2'].map(f=>H(sum(inc,f)-sum(exp,f),{num:1,b:1,bg:BG.rem})),[H((sum(inc,'c1')+sum(inc,'c2'))-(sum(exp,'c1')+sum(exp,'c2')),{num:1,b:1,bg:BG.rem}),H(sum(inc,'d')-sum(exp,'d'),{num:1,b:1,bg:BG.rem}),H((sum(inc,'d')-sum(inc,'b'))-(sum(exp,'d')-sum(exp,'b')),{num:1,b:1,bg:BG.rem}),H((sum(inc,'d')-sum(inc,'c1')-sum(inc,'c2'))-(sum(exp,'d')-sum(exp,'c1')-sum(exp,'c2')),{num:1,b:1,bg:BG.rem})]);
-  return {title:`${y}년도 예산(안) 편성 및 사역(행사)계획서`,sheet:`${y}년도 예산계획서`,sub:`소망교회 청년회 (${planDn(p.dept)})\n(단위: 원)`,land:true,fitH:true,sign:slotsFor('budget',p.dept).map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
+  return {title:`${y}년도 예산(안) 편성 및 사역(행사)계획서`,sheet:`${y}년도 예산계획서`,sub:`소망교회 청년회 (${planDn(p.dept)})\n(단위: 원)`,land:true,fitH:true,normal:true,sign:slotsFor('budget',p.dept).map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
    widths:[7,16,18,13,13,12,12,13,13,12,12],
    head:[[TH('구분',{rs:2}),TH('항(대분류)',{rs:2}),TH('목(소분류)',{rs:2}),TH(`${y-2}년\n금액(A)`,{rs:2}),TH(`${y-1}년\n예산액(B)`,{rs:2}),TH(`${y-1}년도 가결산(C)`,{cs:3}),TH(`${y}년\n예산(D)`,{rs:2,bg:BG.d}),TH('전년대비\n(D-B)',{rs:2}),TH('금액대비\n(D-C)',{rs:2})],[TH('10/31까지\n지출(가)'),TH('11/1~12/31\n예상지출(나)'),TH('합계\n(가+나)')]],
-   body:inc.filter(nz).map(r=>line(r,'수입')).concat([foot('수입 합계(1)',inc,BG.inc)],exp.filter(nz).map(r=>line(r,'지출')),[foot('지출 합계(2)',exp,BG.exp),rem]),
+   body:grp(inc.filter(nz),'수입').concat([foot('수입 합계(1)',inc,BG.inc)],grp(exp.filter(nz),'지출'),[foot('지출 합계(2)',exp,BG.exp),rem]),
    notes:['1. 예산 범위 내에서 편성하시기 바랍니다.','2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다.']};
 }
-function planRowHTML(r,i,ro){
+function planRowHTML(r,i,ro,o){o=o||{k:1,c:1};
   const dis=ro?' disabled':'';
   const nm=r.icat?incCn(r.icat):cn(r.cat),it=r.icat?incIn(r.iitem):inm(r.item);
   const amt=f=>`<td><input class="pamt" data-i="${i}" data-f="${f}" inputmode="numeric" value="${r[f]?won(r[f]):''}" placeholder="0" style="width:100%;text-align:right"${dis}></td>`;
-  return `<tr><td style="text-align:center"><span class="tag">${r.kind==='income'?'수입':'지출'}</span></td>
-  <td>${esc(nm)}${r.kind==='income'&&!r.icat?' ':''}</td><td>${esc(it)||'<span class="note">(항 전체)</span>'}</td>
+  return `<tr>${o.k?`<td rowspan="${o.k}" style="text-align:center;vertical-align:middle;font-weight:700;background:${r.kind==='income'?'#f3f7ff':'#fff6f5'}">${r.kind==='income'?'수입':'지출'}</td>`:''}
+  ${o.c?`<td rowspan="${o.c}" style="vertical-align:middle;font-weight:600">${esc(nm)}</td>`:''}<td>${esc(it)||'<span class="note">(항 전체)</span>'}</td>
   ${amt('a')}${amt('b')}${amt('c1')}${amt('c2')}<td class="num pc" data-i="${i}" data-k="c"></td>${amt('d')}<td class="num pc" data-i="${i}" data-k="db"></td><td class="num pc" data-i="${i}" data-k="dc"></td></tr>`;
 }
 function planBodyHTML(ro){
@@ -892,7 +903,9 @@ function planBodyHTML(ro){
   [['income','수입 부문 (수입 계정항목)','#e8f1ff','#1d4ed8'],['expense','지출 부문 (지출 계정항목)','#fdeceb','#b91c1c']].forEach(([k,lab,bg,fg])=>{
     const idx=p.rows.map((r,i)=>i).filter(i=>p.rows[i].kind===k);if(!idx.length)return;
     out.push(`<tr class="psec"><td colspan="11" style="background:${bg};color:${fg};font-weight:800;border-left:5px solid ${fg};padding:9px 10px">${lab}</td></tr>`);
-    idx.forEach(i=>out.push(planRowHTML(p.rows[i],i,ro)));
+    const ck=r=>r.icat?'i'+r.icat:'e'+r.cat;
+    idx.forEach((i,n)=>{const r=p.rows[i],prev=n>0&&ck(p.rows[idx[n-1]])===ck(r);let c=0;if(!prev)for(let j=n;j<idx.length&&ck(p.rows[idx[j]])===ck(r);j++)c++;
+      out.push(planRowHTML(r,i,ro,{k:n===0?idx.length:0,c:prev?0:c}))});
     out.push(`<tr class="psub" data-kind="${k}" style="background:${bg};font-weight:700"><td colspan="3" style="color:${fg}">${k==='income'?'수입 합계(1)':'지출 합계(2)'}</td>${['a','b','c1','c2','c','d','db','dc'].map(f=>`<td class="num" data-sf="${f}"></td>`).join('')}</tr>`)});
   return out.join('');
 }
@@ -931,7 +944,7 @@ function renderPlan(){
     el.onblur=()=>{const v=p.rows[+el.dataset.i][el.dataset.f];el.value=v?won(v):''};
   });
   if(!ro){$('#psv').onclick=()=>planSave(false);$('#pp').onclick=planPull}
-  $('#ppr').onclick=()=>printPages(mHTML(planModel()),{land:true,fit:true,title:`${y} 예산계획서`});
+  $('#ppr').onclick=()=>printPages(mHTML(planModel()),{land:true,fit:true,normal:true,title:`${y} 예산계획서`});
   $('#pxl').onclick=()=>mXLSX(planModel(),`${y}_${planDn(p.dept)}_예산계획서`);
 }
 async function planPull(){
