@@ -481,9 +481,9 @@ async function payAct(a,i){
 /* ───── 메뉴 구조 ───── */
 const all=()=>true,money=()=>isMoney(),adm=()=>isAdmin();
 const MENU=[
- {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list','지출 내역'],['pay','입금 처리',money]]},
+ {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list','지출 내역'],['pay','전도금 처리',money]]},
  {k:'m_inc',l:'수입',vis:money,subs:[['income','수입 등록'],['claim','예산 청구'],['fund','내역 확인']]},
- {k:'m_acc',l:'계좌',vis:money,subs:[['accts','계좌 관리'],['ledger','입출금 내역'],['transfer','이체']]},
+ {k:'m_acc',l:'계좌',vis:money,subs:[['ledger','내역 확인'],['accts','계좌 관리']]},
  {k:'m_bud',l:'예산',vis:money,subs:[['plan','예산 수립'],['borrow','부서 간 차용']]},
  {k:'m_dash',l:'현황',vis:all,subs:[['dash','부서별 현황']]},
  {k:'m_aud',l:'감사',vis:money,subs:[['daily','일일 수지내역'],['monthly','월별 수지내역'],['settle','수지결산보고서']]},
