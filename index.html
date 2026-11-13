@@ -830,7 +830,14 @@ const H=(v,o)=>Object.assign({v},o||{});
 const TH=(v,o)=>Object.assign({v,al:'c',b:true,bg:BG.head},o||{});
 
 /* ── 예산수립 ── */
+const planDn=d=>d===0?'전체 부서':dn(d);
 function planInit(d){
+  if(d===0){const m=new Map();
+    S.lines.forEach(l=>{const k=[l.kind,l.category_id||0,l.item_id||0,l.inc_cat_id||0,l.inc_item_id||0].join('|');
+      let r=m.get(k);if(!r){r={kind:l.kind,cat:l.category_id,item:l.item_id,icat:l.inc_cat_id,iitem:l.inc_item_id,a:0,b:0,c1:0,c2:0,d:0,note:''};m.set(k,r)}
+      r.a+=+l.amt_a;r.b+=+l.amt_b;r.c1+=+l.amt_c1;r.c2+=+l.amt_c2;r.d+=+l.amt_d});
+    const ord=r=>r.kind==='expense'?S.cats.findIndex(c=>c.id===r.cat):S.incCats.findIndex(c=>c.id===r.icat);
+    S.plan={dept:0,dirty:false,rows:[...m.values()].sort((x,y)=>(x.kind===y.kind?0:x.kind==='income'?-1:1)||ord(x)-ord(y))};return}
   const ls=S.lines.filter(l=>l.dept_id===d).sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);
   S.plan={dept:d,dirty:false,rows:ls.map(l=>({kind:l.kind,cat:l.category_id,item:l.item_id,icat:l.inc_cat_id,iitem:l.inc_item_id,a:+l.amt_a,b:+l.amt_b,c1:+l.amt_c1,c2:+l.amt_c2,d:+l.amt_d,note:l.note||''}))};
 }
@@ -840,15 +847,15 @@ function planModel(){
   const line=(r,lab)=>{const c=r.c1+r.c2;return [H(lab,{al:'c'}),H(r.kind==='expense'?cn(r.cat):incCn(r.icat)),H(r.kind==='expense'?inm(r.item):incIn(r.iitem)),H(r.a,{num:1}),H(r.b,{num:1}),H(r.c1,{num:1}),H(r.c2,{num:1}),H(c,{num:1,b:1}),H(r.d,{num:1,b:1,bg:BG.d}),H(r.d-r.b,{num:1}),H(r.d-c,{num:1})]};
   const foot=(lab,arr,bg)=>{const c=sum(arr,'c1')+sum(arr,'c2');return [H(lab,{cs:3,b:1,bg}),H(sum(arr,'a'),{num:1,b:1,bg}),H(sum(arr,'b'),{num:1,b:1,bg}),H(sum(arr,'c1'),{num:1,b:1,bg}),H(sum(arr,'c2'),{num:1,b:1,bg}),H(c,{num:1,b:1,bg}),H(sum(arr,'d'),{num:1,b:1,bg}),H(sum(arr,'d')-sum(arr,'b'),{num:1,b:1,bg}),H(sum(arr,'d')-c,{num:1,b:1,bg})]};
   const rem=[H('잔액(1-2)',{cs:3,b:1,bg:BG.rem})].concat(['a','b','c1','c2'].map(f=>H(sum(inc,f)-sum(exp,f),{num:1,b:1,bg:BG.rem})),[H((sum(inc,'c1')+sum(inc,'c2'))-(sum(exp,'c1')+sum(exp,'c2')),{num:1,b:1,bg:BG.rem}),H(sum(inc,'d')-sum(exp,'d'),{num:1,b:1,bg:BG.rem}),H((sum(inc,'d')-sum(inc,'b'))-(sum(exp,'d')-sum(exp,'b')),{num:1,b:1,bg:BG.rem}),H((sum(inc,'d')-sum(inc,'c1')-sum(inc,'c2'))-(sum(exp,'d')-sum(exp,'c1')-sum(exp,'c2')),{num:1,b:1,bg:BG.rem})]);
-  return {title:`${y}년도 예산(안) 편성 및 사역(행사)계획서`,sheet:`${y}년도 예산계획서`,sub:`소망교회 청년회 (${dn(p.dept)})\n(단위: 원)`,land:true,fitH:true,sign:slotsFor('budget',p.dept).map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
+  return {title:`${y}년도 예산(안) 편성 및 사역(행사)계획서`,sheet:`${y}년도 예산계획서`,sub:`소망교회 청년회 (${planDn(p.dept)})\n(단위: 원)`,land:true,fitH:true,sign:slotsFor('budget',p.dept).map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
    widths:[7,16,18,13,13,12,12,13,13,12,12],
    head:[[TH('구분',{rs:2}),TH('항(대분류)',{rs:2}),TH('목(소분류)',{rs:2}),TH(`${y-2}년\n금액(A)`,{rs:2}),TH(`${y-1}년\n예산액(B)`,{rs:2}),TH(`${y-1}년도 가결산(C)`,{cs:3}),TH(`${y}년\n예산(D)`,{rs:2,bg:BG.d}),TH('전년대비\n(D-B)',{rs:2}),TH('금액대비\n(D-C)',{rs:2})],[TH('10/31까지\n지출(가)'),TH('11/1~12/31\n예상지출(나)'),TH('합계\n(가+나)')]],
    body:inc.map(r=>line(r,'수입')).concat([foot('수입 합계(1)',inc,BG.inc)],exp.map(r=>line(r,'지출')),[foot('지출 합계(2)',exp,BG.exp),rem]),
    notes:['1. 예산 범위 내에서 편성하시기 바랍니다.','2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다.']};
 }
 function planRowHTML(r,i,ro){
-  const its=r.kind==='expense'?S.items.filter(x=>x.active&&x.category_id===r.cat&&(x.dept_id===null||x.dept_id===S.plan.dept)):S.incItems.filter(x=>x.active&&x.category_id===r.icat);
-  const cats=r.kind==='expense'?catsOf(S.plan.dept):S.incCats.filter(c=>c.active||c.id===r.icat);
+  const its=r.kind==='expense'?S.items.filter(x=>x.category_id===r.cat&&(S.plan.dept===0||(x.active&&(x.dept_id===null||x.dept_id===S.plan.dept)))):S.incItems.filter(x=>x.active&&x.category_id===r.icat);
+  const cats=r.kind==='expense'?(S.plan.dept===0?S.cats:catsOf(S.plan.dept)):S.incCats.filter(c=>c.active||c.id===r.icat);
   const dis=ro?' disabled':'';
   const amt=f=>`<td><input class="pamt" data-i="${i}" data-f="${f}" inputmode="numeric" value="${r[f]}" style="width:100%;text-align:right"${dis}></td>`;
   return `<tr><td style="text-align:center"><span class="tag">${r.kind==='income'?'수입':'지출'}</span></td>
@@ -862,14 +869,14 @@ function planCalc(){
   const m=planModel(),f=$('#planfoot');if(f)f.innerHTML=m.body.filter(r=>r[0].cs===3).map(r=>`<tr>${r.map((c,i)=>i===0?`<th colspan="3" style="text-align:left;background:${c.bg}">${esc(c.v)}</th>`:`<td class="num" style="background:${c.bg};font-weight:700">${won(c.v)}</td>`).join('')}<td></td></tr>`).join('');
 }
 function renderPlan(){
-  const y=S.year,ro=!isAdmin();
-  if(!S.plan||S.plan.y!==y){const d=S.plan?.dept||S.depts[0]?.id;planInit(d);S.plan.y=y}
-  const p=S.plan;
+  const y=S.year;
+  if(!S.plan||S.plan.y!==y){const d=S.plan?S.plan.dept:S.depts[0]?.id;planInit(d);S.plan.y=y}
+  const p=S.plan,ro=!isAdmin()||p.dept===0;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${y}년도 예산 수립 (예산계획서)</h3><div style="display:flex;gap:6px;flex-wrap:wrap">
    ${ro?'':`<button class="btn btn-ghost btn-sm" id="pp">전년도 불러오기</button><button class="btn btn-ghost btn-sm" id="pai">+ 수입 항목</button><button class="btn btn-ghost btn-sm" id="pae">+ 지출 항목</button><button class="btn btn-primary btn-sm" id="psv">저장</button>`}
    <button class="btn btn-ghost btn-sm" id="ppr">인쇄</button><button class="btn btn-ghost btn-sm" id="pxl">엑셀</button></div></div>
-  <div class="card-body"><div class="filters"><select id="pd">${S.depts.map(d=>`<option value="${d.id}" ${d.id===p.dept?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>
-  ${ro?'<p class="note">예산 수립은 관리자만 수정할 수 있습니다. (열람·출력만 가능)</p>':'<p class="note">지출 예산(D)은 저장하면 부서별 예산·지출 현황에 바로 반영됩니다. 「전년도 불러오기」는 전전년 결산(A)·전년 예산(B)·전년 10/31까지 실적(가)을 시스템 기록에서 채워줍니다. 예상지출(나)과 올해 예산(D)은 직접 입력하세요.'}</p></div>
+  <div class="card-body"><div class="filters"><select id="pd"><option value="0" ${p.dept===0?'selected':''}>전체 부서 (합계)</option>${S.depts.map(d=>`<option value="${d.id}" ${d.id===p.dept?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>
+  ${ro?`<p class="note">${p.dept===0?'전체 부서의 예산을 항·목별로 합산한 화면입니다. 열람·인쇄·엑셀 전용이며, 수정은 부서를 선택해서 하세요.':'예산 수립은 관리자만 수정할 수 있습니다. (열람·출력만 가능)'}</p>`:'<p class="note">지출 예산(D)은 저장하면 부서별 예산·지출 현황에 바로 반영됩니다. 「전년도 불러오기」는 전전년 결산(A)·전년 예산(B)·전년 10/31까지 실적(가)을 시스템 기록에서 채워줍니다. 예상지출(나)과 올해 예산(D)은 직접 입력하세요.'}</p></div>
   <div class="tblwrap"><table class="tbl" id="plantbl"><thead><tr><th>구분</th><th>항(대분류)</th><th>목(소분류)</th><th class="num">${y-2}년 금액(A)</th><th class="num">${y-1}년 예산액(B)</th><th class="num">10/31까지 지출(가)</th><th class="num">11/1~12/31 예상(나)</th><th class="num">${y-1}년 가결산(C)</th><th class="num">${y}년 예산(D)</th><th class="num">D-B</th><th class="num">D-C</th><th></th></tr></thead>
   <tbody>${p.rows.length?p.rows.map((r,i)=>planRowHTML(r,i,ro)).join(''):'<tr><td colspan="12" class="empty">항목이 없습니다. 위의 버튼으로 추가하세요.</td></tr>'}</tbody><tfoot id="planfoot"></tfoot></table></div></div>`;
   planCalc();
@@ -886,7 +893,7 @@ function renderPlan(){
     $('#pp').onclick=planPull;
   }
   $('#ppr').onclick=()=>printPages(mHTML(planModel()),{land:true,fit:true,title:`${y} 예산계획서`});
-  $('#pxl').onclick=()=>mXLSX(planModel(),`${y}_${dn(p.dept)}_예산계획서`);
+  $('#pxl').onclick=()=>mXLSX(planModel(),`${y}_${planDn(p.dept)}_예산계획서`);
 }
 async function planPull(){
   const p=S.plan,y=S.year,d=p.dept;
