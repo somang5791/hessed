@@ -303,9 +303,15 @@ function editModal(e){
   m.querySelector('#ecancel').onclick=()=>m.remove();
   m.querySelector('#esave').onclick=async()=>{try{await rpc('admin_update_expense',{p_id:e.id,p_dept:+m.querySelector('#ed').value,p_cat:+m.querySelector('#ec').value,p_item:m.querySelector('#ei').value?+m.querySelector('#ei').value:null,p_amount:+m.querySelector('#ea').value,p_description:m.querySelector('#edesc').value,p_note:m.querySelector('#en').value||null,p_date:m.querySelector('#edt').value});m.remove();toast('수정했습니다.');await loadYear();render()}catch(_){}};
 }
-function slotsFor(doc){return S.slots.filter(s=>s.doc_type===doc).sort((a,b)=>a.sort_order-b.sort_order)}
-function printHTML(title,body,doc){
-  const sl=slotsFor(doc);
+function slotsBy(doc,o){return S.slots.filter(s=>s.doc_type===doc&&(s.owner_user_id||null)===(o||null)).sort((a,b)=>a.sort_order-b.sort_order)}
+/* 결재란 선택: 보는 사람이 담당회계면 본인 것 → 해당 부서 담당회계의 개별 결재란 → 기본 순서 */
+function slotsFor(doc,dept){
+  const cand=[];if(S.me.role==='accountant')cand.push(S.me.user_id);
+  if(dept)S.profiles.filter(p=>p.role==='accountant'&&S.scopes.some(x=>x.user_id===p.user_id&&x.dept_id===+dept)).forEach(p=>cand.push(p.user_id));
+  for(const o of cand){const r=slotsBy(doc,o);if(r.length)return r}
+  return slotsBy(doc,null)}
+function printHTML(title,body,doc,dept){
+  const sl=slotsFor(doc,dept);
   const box=sl.length?`<table class="ap"><tr>${sl.map(s=>`<th>${esc(s.label)}</th>`).join('')}</tr><tr>${sl.map(s=>`<td>${s.sign_img?`<img src="${esc(s.sign_img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(s.signer||'')}</td>`).join('')}</tr></table>`:'';
   return `<html><head><meta charset="UTF-8"><title>${esc(title)}</title><style>@page{size:A4;margin:15mm}body{font-family:'Malgun Gothic',sans-serif;font-size:12px}h2{text-align:center;margin:10px 0 14px;font-size:20px}.ap{border-collapse:collapse;margin-left:auto}.ap th,.ap td{border:1px solid #000;min-width:60px;text-align:center;padding:3px 6px}.ap th{background:#eee}.ap td{height:46px}table.d{width:100%;border-collapse:collapse;margin-top:14px}table.d th,table.d td{border:1px solid #000;padding:7px 9px;text-align:left}table.d th{background:#f2f2f2;width:22%}</style></head><body>${box}<h2>${esc(title)}</h2>${body}</body></html>`;
 }
@@ -397,23 +403,30 @@ function signImg(file){return new Promise((res,rej)=>{const im=new Image(),u=URL
     const d=cv.toDataURL('image/'+fmt,.85);if(d.length<=80000)return res(d)}rej(new Error('이미지가 너무 큽니다. 더 단순한 서명 이미지를 사용하세요.'))};
   im.onerror=()=>rej(new Error('이미지를 읽을 수 없습니다. JPG/PNG 파일을 선택하세요.'));im.src=u})}
 function setAppr(){
-  S.apDoc=S.apDoc||'expense';
-  const draw=()=>{const sl=slotsFor(S.apDoc);S.apRows=sl.map(s=>({label:s.label,signer:s.signer||'',img:s.sign_img||''}));paint()};
+  S.apDoc=S.apDoc||'expense';S.apOwner=S.apOwner||'';
+  const accs=S.profiles.filter(p=>p.role==='accountant');
+  const draw=()=>{const own=S.apOwner?slotsBy(S.apDoc,S.apOwner):[];const sl=S.apOwner&&!own.length?slotsBy(S.apDoc,null):(S.apOwner?own:slotsBy(S.apDoc,null));
+    S.apRows=sl.map(s=>({label:s.label,signer:s.signer||'',img:s.sign_img||''}));
+    $('#apnote').innerHTML=S.apOwner?(own.length?'이 회계 전용 결재란이 적용 중입니다.':'개별 설정이 없어 기본 결재란을 사용 중입니다. (아래는 기본 내용이며, 저장하면 이 회계 전용으로 적용됩니다)'):'개별 설정이 없는 회계와 관리자가 쓰는 기본 결재란입니다.';
+    $('#aprel').style.display=S.apOwner&&own.length?'':'none';paint()};
   const paint=()=>{
     $('#aprows').innerHTML=S.apRows.map((r,i)=>`<div class="slotrow"><span style="width:20px">${i+1}</span><input class="inp" data-k="label" data-i="${i}" placeholder="칸 제목 (예: 담당)" value="${esc(r.label)}"><input class="inp" data-k="signer" data-i="${i}" placeholder="기본 서명자 (선택)" value="${esc(r.signer)}"><label class="btn btn-ghost btn-sm" style="cursor:pointer;margin:0">서명 이미지<input type="file" accept="image/*" data-simg="${i}" hidden></label>${r.img?`<img class="sigthumb" src="${esc(r.img)}"><button class="btn btn-ghost btn-sm" data-sdel="${i}">이미지 삭제</button>`:''}<button class="btn btn-ghost btn-sm" data-act="aprm" data-id="${i}">✕</button></div>`).join('');
     $('#appreview').innerHTML=apPrev()||'<p class="note">결재란 없음 (인쇄물에 결재란이 나오지 않습니다)</p>'};
   $('#subbody').innerHTML=`<div class="card"><div class="card-head"><h3>결재란 설정</h3></div><div class="card-body">
+  <div class="field" style="max-width:320px"><label>적용 대상</label><select id="apo"><option value="">기본 (공통)</option>${accs.map(a=>`<option value="${a.user_id}" ${S.apOwner===a.user_id?'selected':''}>${esc(a.display_name)} (${esc(a.login_id)})</option>`).join('')}</select></div>
   <div class="field" style="max-width:260px"><label>문서 종류</label><select id="apd">${Object.entries(DOCS).map(([k,v])=>`<option value="${k}" ${S.apDoc===k?'selected':''}>${v}</option>`).join('')}</select></div>
-  <p class="note">인쇄물 오른쪽 위에 표시됩니다. 최대 6칸. 「서명 이미지」를 올리면 서명이 이름 위에 함께 인쇄됩니다. (흰 배경 또는 투명 배경 PNG 권장 · 자동으로 작게 줄여 저장)</p><div id="aprows"></div>
+  <p class="note" id="apnote"></p><p class="note">인쇄물 오른쪽 위에 표시됩니다. 지출결의서·청구서는 해당 부서 담당회계의 결재란이 우선 적용됩니다. 최대 6칸. 「서명 이미지」를 올리면 서명이 이름 위에 함께 인쇄됩니다. (흰 배경 또는 투명 배경 PNG 권장 · 자동으로 작게 줄여 저장)</p><div id="aprows"></div>
   <div style="margin:8px 0"><button class="btn btn-ghost btn-sm" id="apadd">+ 칸 추가</button></div><div id="appreview"></div>
-  <button class="btn btn-primary" id="apsave">저장</button></div></div>`;
+  <button class="btn btn-primary" id="apsave">저장</button> <button class="btn btn-ghost" id="aprel" style="display:none">개별 설정 해제 (기본 사용)</button></div></div>`;
   S.apPaint=paint;draw();
   $('#apd').onchange=e=>{S.apDoc=e.target.value;draw()};
+  $('#apo').onchange=e=>{S.apOwner=e.target.value;draw()};
+  $('#aprel').onclick=async()=>{if(!confirm('이 회계의 개별 결재란을 지우고 기본 결재란을 쓸까요?'))return;try{await rpc('set_approval_line',{p_doc:S.apDoc,p_slots:[],p_owner:S.apOwner});toast('해제했습니다.');await loadStatic();draw()}catch(_){}};
   $('#apadd').onclick=()=>{if(S.apRows.length>=6)return toast('최대 6칸입니다.',true);S.apRows.push({label:'',signer:''});paint()};
   $('#aprows').oninput=e=>{const i=e.target.dataset.i;if(i!=null){S.apRows[+i][e.target.dataset.k]=e.target.value;$('#appreview').innerHTML=apPrev()}};
   $('#aprows').onchange=async e=>{const i=e.target.dataset.simg;if(i==null||!e.target.files[0])return;try{S.apRows[+i].img=await signImg(e.target.files[0]);paint()}catch(err){toast(err.message||'이미지를 읽을 수 없습니다.',true)}};
   $('#aprows').onclick=e=>{const i=e.target.dataset.sdel;if(i!=null){S.apRows[+i].img='';paint()}};
-  $('#apsave').onclick=async()=>{try{await rpc('set_approval_line',{p_doc:S.apDoc,p_slots:S.apRows});toast('저장했습니다.');await loadStatic();draw()}catch(_){}};
+  $('#apsave').onclick=async()=>{try{await rpc('set_approval_line',{p_doc:S.apDoc,p_slots:S.apRows,p_owner:S.apOwner||null});toast('저장했습니다.');await loadStatic();draw()}catch(_){}};
 }
 function setYear(){
   $('#subbody').innerHTML=`<div class="card"><div class="card-head"><h3>${S.year}년 담당자 기록</h3></div><div class="card-body"><p class="note">현재 사용자·역할·권한(체크박스)을 이 연도의 담당자 기록으로 저장합니다. 연도가 바뀌어 담당자가 달라지기 전에 저장해 두세요. 5년간 보관되며 기한이 지나면 관리자에게 알림이 표시됩니다.</p><button class="btn btn-primary" data-act="snap">이 연도 담당자 기록 저장</button></div></div>
@@ -594,7 +607,7 @@ function renderClaim(){
 function printClaim(id){
   const f=S.funds.find(x=>x.id===+id);if(!f)return toast('청구 내역을 찾을 수 없습니다.',true);const a=S.accts.find(x=>x.id===f.account_id);
   const row=(k,v)=>`<tr><th>${k}</th><td>${v}</td></tr>`;
-  doPrint(printHTML('예산 청구서',`<table class="d">${row('회계연도',f.fiscal_year+'년')}${row('부서',esc(dn(f.dept_id)))}${row('항',esc(cn(f.category_id)))}${row('청구 금액',won(f.amount)+'원')}${row('입금 계좌',a?esc(a.bank_name+' '+a.account_no+' ('+a.holder+')'):'-')}${row('사유',esc(f.memo||''))}${row('청구일',f.requested_at.slice(0,10))}${row('청구자',esc(pn(f.requested_by)))}</table>`,'budget'));
+  doPrint(printHTML('예산 청구서',`<table class="d">${row('회계연도',f.fiscal_year+'년')}${row('부서',esc(dn(f.dept_id)))}${row('항',esc(cn(f.category_id)))}${row('청구 금액',won(f.amount)+'원')}${row('입금 계좌',a?esc(a.bank_name+' '+a.account_no+' ('+a.holder+')'):'-')}${row('사유',esc(f.memo||''))}${row('청구일',f.requested_at.slice(0,10))}${row('청구자',esc(pn(f.requested_by)))}</table>`,'budget',f.dept_id));
 }
 function incDepts(){return isAdmin()?S.depts:S.depts.filter(d=>myScopes().some(x=>x.dept_id===d.id))}
 function renderIncome(){
@@ -766,10 +779,10 @@ async function printPages(pagesHtml,o){o=o||{};
 
 /* ── 지출결의서 (유아부 서식) ── */
 async function receiptUrl(path){if(!path)return '';const {data}=await sb.storage.from('receipts').createSignedUrl(path,3600);return data?.signedUrl||''}
-function signHTML(doc){const sl=slotsFor(doc);return sl.length?`<table class="ap"><tr>${sl.map(s=>`<th>${esc(s.label)}</th>`).join('')}</tr><tr>${sl.map(s=>`<td>${s.sign_img?`<img src="${esc(s.sign_img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(s.signer||'')}</td>`).join('')}</tr></table>`:''}
+function signHTML(doc,dept){const sl=slotsFor(doc,dept);return sl.length?`<table class="ap"><tr>${sl.map(s=>`<th>${esc(s.label)}</th>`).join('')}</tr><tr>${sl.map(s=>`<td>${s.sign_img?`<img src="${esc(s.sign_img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(s.signer||'')}</td>`).join('')}</tr></table>`:''}
 function resHTML(e,img){
   const row=(k,v,extra)=>`<tr><th>${k}</th><td${extra||''}>${v}</td></tr>`;
-  return `<div class="pg"><div class="rhead" style="margin-bottom:14px"><div><div class="rtitle" style="text-align:left">비 용 지 출 결 의 서</div><div>소망교회 청년회 (${esc(dn(e.dept_id))})</div></div>${signHTML('expense')}</div>
+  return `<div class="pg"><div class="rhead" style="margin-bottom:14px"><div><div class="rtitle" style="text-align:left">비 용 지 출 결 의 서</div><div>소망교회 청년회 (${esc(dn(e.dept_id))})</div></div>${signHTML('expense',e.dept_id)}</div>
   <table class="res">${row('일 자',esc(e.dt))}${row('항 / 목',esc(cn(e.category_id))+(e.item_id?' / '+esc(inm(e.item_id)):''))}${row('내 역',esc(e.summary))}${row('금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${row('비 고',esc(e.note||'-'))}</table>
   <div class="rcpt" style="${img?'':'height:200mm;display:flex;align-items:center;justify-content:center;color:#999'}">${img?`<div style="font-size:9pt;color:#888;margin-bottom:4px">▼ 영수증</div><img src="${esc(img)}">`:'영수증 붙이는 곳'}</div>
   <div class="rnote">주) 1. 비용집행시 영수증 1매당 사용 양식 2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다. 3. 개인카드사용, 개인용도로 사용은 엄하게 금지합니다.</div></div>`}
@@ -827,7 +840,7 @@ function planModel(){
   const line=(r,lab)=>{const c=r.c1+r.c2;return [H(lab,{al:'c'}),H(r.kind==='expense'?cn(r.cat):incCn(r.icat)),H(r.kind==='expense'?inm(r.item):incIn(r.iitem)),H(r.a,{num:1}),H(r.b,{num:1}),H(r.c1,{num:1}),H(r.c2,{num:1}),H(c,{num:1,b:1}),H(r.d,{num:1,b:1,bg:BG.d}),H(r.d-r.b,{num:1}),H(r.d-c,{num:1})]};
   const foot=(lab,arr,bg)=>{const c=sum(arr,'c1')+sum(arr,'c2');return [H(lab,{cs:3,b:1,bg}),H(sum(arr,'a'),{num:1,b:1,bg}),H(sum(arr,'b'),{num:1,b:1,bg}),H(sum(arr,'c1'),{num:1,b:1,bg}),H(sum(arr,'c2'),{num:1,b:1,bg}),H(c,{num:1,b:1,bg}),H(sum(arr,'d'),{num:1,b:1,bg}),H(sum(arr,'d')-sum(arr,'b'),{num:1,b:1,bg}),H(sum(arr,'d')-c,{num:1,b:1,bg})]};
   const rem=[H('잔액(1-2)',{cs:3,b:1,bg:BG.rem})].concat(['a','b','c1','c2'].map(f=>H(sum(inc,f)-sum(exp,f),{num:1,b:1,bg:BG.rem})),[H((sum(inc,'c1')+sum(inc,'c2'))-(sum(exp,'c1')+sum(exp,'c2')),{num:1,b:1,bg:BG.rem}),H(sum(inc,'d')-sum(exp,'d'),{num:1,b:1,bg:BG.rem}),H((sum(inc,'d')-sum(inc,'b'))-(sum(exp,'d')-sum(exp,'b')),{num:1,b:1,bg:BG.rem}),H((sum(inc,'d')-sum(inc,'c1')-sum(inc,'c2'))-(sum(exp,'d')-sum(exp,'c1')-sum(exp,'c2')),{num:1,b:1,bg:BG.rem})]);
-  return {title:`${y}년도 예산(안) 편성 및 사역(행사)계획서`,sheet:`${y}년도 예산계획서`,sub:`소망교회 청년회 (${dn(p.dept)})\n(단위: 원)`,land:true,fitH:true,sign:slotsFor('budget').map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
+  return {title:`${y}년도 예산(안) 편성 및 사역(행사)계획서`,sheet:`${y}년도 예산계획서`,sub:`소망교회 청년회 (${dn(p.dept)})\n(단위: 원)`,land:true,fitH:true,sign:slotsFor('budget',p.dept).map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
    widths:[7,16,18,13,13,12,12,13,13,12,12],
    head:[[TH('구분',{rs:2}),TH('항(대분류)',{rs:2}),TH('목(소분류)',{rs:2}),TH(`${y-2}년\n금액(A)`,{rs:2}),TH(`${y-1}년\n예산액(B)`,{rs:2}),TH(`${y-1}년도 가결산(C)`,{cs:3}),TH(`${y}년\n예산(D)`,{rs:2,bg:BG.d}),TH('전년대비\n(D-B)',{rs:2}),TH('금액대비\n(D-C)',{rs:2})],[TH('10/31까지\n지출(가)'),TH('11/1~12/31\n예상지출(나)'),TH('합계\n(가+나)')]],
    body:inc.map(r=>line(r,'수입')).concat([foot('수입 합계(1)',inc,BG.inc)],exp.map(r=>line(r,'지출')),[foot('지출 합계(2)',exp,BG.exp),rem]),
@@ -1006,7 +1019,7 @@ function settleModel(qs){
   mk('수입','income');foot('수입 합계(1)',tot.income,BG.sum);mk('지출','expense');foot('지출 합계(2)',tot.expense,BG.sum);
   const I=tot.income,E=tot.expense,R={a:I.a-E.a,b:I.b-E.b,c:I.c-E.c};foot('잔액(1-2) — 다음년도 이월액',R,BG.rem);
   const qlabel=qs.length===4?'1~4분기 (연간)':qs.map(q=>q+'분기').join('·')+' 누계';
-  return {title:`${y}년도 수입, 지출 결산보고서`,sheet:`${y}년도 수지결산`,sub:`소망교회 청년회 (${deptLabel()})\n(${y}년 ${qlabel}) (단위: 원)`,land:true,fitH:true,sign:slotsFor('settlement').map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
+  return {title:`${y}년도 수입, 지출 결산보고서`,sheet:`${y}년도 수지결산`,sub:`소망교회 청년회 (${deptLabel()})\n(${y}년 ${qlabel}) (단위: 원)`,land:true,fitH:true,sign:slotsFor('settlement',S.rd?+S.rd:null).map(s=>({label:s.label,signer:s.signer,img:s.sign_img})),
    widths:[7,18,24,13,13,13,13,13,10],
    head:[[TH('구분',{rs:2}),TH('항(대분류)',{rs:2}),TH('목(소분류)',{rs:2}),TH(`${y-1}년\n금액(A)`,{rs:2}),TH(`${y}년도`,{cs:2,bg:'#E8EEF8'}),TH('증감',{cs:2,bg:'#FEF9E6'}),TH('비고',{rs:2})],[TH('예산액(B)',{bg:'#E8EEF8'}),TH('금액(C)',{bg:'#E8EEF8'}),TH('전년대비\n(C-A)',{bg:'#FEF9E6'}),TH('예산대비\n(B-C)',{bg:'#FEF9E6'})]],
    body,notes:['1. 연간 예산 범위 내에서 절감 운용되어야 하며 부득이 예산 초과시에는 절차에 의한 추가예산 배정을 받아야 합니다.','2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다.']};
