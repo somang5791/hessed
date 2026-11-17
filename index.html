@@ -14,6 +14,7 @@
 body{font-family:'Noto Sans KR',sans-serif;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.6}
 header{background:#fff;color:var(--ink);border-bottom:1px solid var(--rule);padding:0 16px;display:flex;align-items:center;justify-content:space-between;height:56px;position:sticky;top:0;z-index:200;box-shadow:var(--shadow)}
 .hbrand{display:flex;align-items:center;gap:8px;min-width:0}.hbrand img{width:36px;height:36px;flex-shrink:0}.hbrand h1{letter-spacing:.12em}
+.hbrand img,.hbrand h1{cursor:pointer}
 .hbrand h1{font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hyear{font-size:16.66px;font-weight:900;color:var(--blue);line-height:1.2;white-space:nowrap;flex-shrink:0;border:none;background:transparent;font-family:inherit;cursor:pointer;padding:2px 0;outline:none}
 .hyear:hover,.hyear:focus{background:var(--paper2);border-radius:4px}
@@ -21,13 +22,14 @@ header{background:#fff;color:var(--ink);border-bottom:1px solid var(--rule);padd
 .hright{display:flex;align-items:center;gap:8px;font-size:12px}
 .who{background:var(--paper2);color:var(--ink-mid);font-weight:700;padding:3px 10px;border-radius:20px;white-space:nowrap}
 .lockbadge{background:var(--gold);color:var(--ink);font-size:11px;padding:1px 8px;border-radius:10px}
-nav.tabs{background:#fff;border-bottom:2px solid var(--rule);padding:0 8px;display:flex;overflow-x:auto;position:sticky;top:56px;z-index:190;scrollbar-width:none}
+nav.tabs{background:var(--blue);border-bottom:none;padding:0 8px;display:flex;overflow-x:auto;position:sticky;top:56px;z-index:190;scrollbar-width:none}
 nav.tabs::-webkit-scrollbar{display:none}
 .subnav{background:var(--paper);border-bottom:1px solid var(--rule);padding:8px 12px;display:flex;gap:6px;overflow-x:auto;position:sticky;top:97px;z-index:185;scrollbar-width:none}
 .subnav button{padding:5px 14px;border-radius:20px;border:1px solid var(--rule);background:#fff;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
 .subnav button.active{background:var(--blue);color:#fff;border-color:var(--blue)}
-.tbtn{padding:10px 9px;font-size:12.5px;font-weight:500;color:var(--ink-soft);background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;margin-bottom:-2px;font-family:inherit}
-.tbtn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:700}
+.tbtn{padding:11px 11px;font-size:13px;font-weight:600;color:rgba(255,255,255,.72);background:transparent;border:none;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap;margin-bottom:-2px;font-family:inherit}
+.tbtn.active{color:#fff;border-bottom-color:#fff;font-weight:800}
+.tbtn:hover{color:#fff}
 .badge{background:var(--red);color:#fff;border-radius:10px;font-size:10px;padding:0 6px;margin-left:4px}
 main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
 .card{background:#fff;border:1px solid var(--rule);border-radius:8px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
@@ -82,10 +84,9 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
     <form id="lf" autocomplete="on">
     <div class="field"><label>아이디</label><input id="lid" name="username" autocomplete="username" autocapitalize="off" autocorrect="off"></div>
     <div class="field"><label>비밀번호</label><input id="lpw" name="password" type="password" autocomplete="current-password"></div>
-    <label style="font-size:12px;display:block;margin-bottom:4px"><input type="checkbox" id="lrem" checked> 아이디 기억하기</label>
-    <label style="font-size:12px;display:block;margin-bottom:12px"><input type="checkbox" id="lkeep" checked> 이 기기에서 로그인 유지</label>
+    <label style="font-size:12px;display:block;margin-bottom:12px"><input type="checkbox" id="lrem" checked> 아이디·비밀번호 저장</label>
     <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center" id="loginBtn">로그인</button></form>
-    <p class="note">계정은 관리자가 미리 만들어 드립니다. 비밀번호를 잊으면 관리자에게 요청하세요.</p>
+    <p class="note" style="text-align:center;margin-top:10px">계정과 비밀번호 문의 : 관리자(010-9331-9159)</p>
   </div></div>
 </div>
 <div id="app" style="display:none">
@@ -100,8 +101,9 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
 const SUPABASE_URL='https://awkckynhksqnxmimpyft.supabase.co';
 const SUPABASE_ANON='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3a2NreW5oa3NxbnhtaW1weWZ0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0NjczMDksImV4cCI6MjExMDA0MzMwOX0.fAD8fmyGJ8vpDj7ZOLB4kg1qmK11JKrgtCO0Jl46nII';
 const ID_DOMAIN='youth.local';
-const KEEP=()=>{try{return localStorage.getItem('sh_keep')!=='0'}catch(_){return true}};
-const authStore={getItem:k=>{try{return (KEEP()?localStorage:sessionStorage).getItem(k)}catch(_){return null}},setItem:(k,v)=>{try{(KEEP()?localStorage:sessionStorage).setItem(k,v)}catch(_){}},removeItem:k=>{try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(_){}}};
+// 로그인은 브라우저를 닫으면 끝납니다(로그인 유지 없음). 예전 '로그인 유지'로 남은 저장값은 정리
+try{localStorage.removeItem('sh_keep');Object.keys(localStorage).filter(k=>/^sb-.*-auth-token/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(_){}
+const authStore={getItem:k=>{try{return sessionStorage.getItem(k)}catch(_){return null}},setItem:(k,v)=>{try{sessionStorage.setItem(k,v)}catch(_){}},removeItem:k=>{try{localStorage.removeItem(k);sessionStorage.removeItem(k)}catch(_){}}};
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_ANON,{auth:{storage:authStore,persistSession:true,autoRefreshToken:true}});
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -134,9 +136,11 @@ const dn=id=>S.depts.find(d=>d.id===id)?.name||id, cn=id=>S.cats.find(c=>c.id===
 async function login(){
   const id=$('#lid').value.trim().toLowerCase(),pw=$('#lpw').value;
   if(!id||!pw)return toast('아이디와 비밀번호를 입력하세요.',true);
-  try{localStorage.setItem('sh_keep',$('#lkeep').checked?'1':'0');if($('#lrem').checked)localStorage.setItem('sh_id',id);else localStorage.removeItem('sh_id')}catch(_){}
   const {error}=await sb.auth.signInWithPassword({email:`${id}@${ID_DOMAIN}`,password:pw});
   if(error)return toast('아이디 또는 비밀번호가 올바르지 않습니다.',true);
+  const save=$('#lrem').checked;
+  try{if(save){localStorage.setItem('sh_id',id);localStorage.setItem('sh_save','1')}else{localStorage.removeItem('sh_id');localStorage.setItem('sh_save','0')}}catch(_){}
+  if(save&&window.PasswordCredential&&navigator.credentials){try{await navigator.credentials.store(new PasswordCredential({id,password:pw,name:id}))}catch(_){}}
   await boot();
 }
 async function boot(){
@@ -417,7 +421,7 @@ function setPerm(){
 function setAcct(){
   const subRow=i=>{const ss=(S.subs||[]).filter(x=>x.item_id===i.id);return `<tr><td colspan="5" style="background:var(--paper);padding:6px 10px 8px 26px"><span class="note">└ 적요</span> ${ss.map(x=>`<span style="display:inline-flex;align-items:center;gap:4px;border:1px solid var(--rule);background:#fff;border-radius:12px;padding:1px 4px 1px 10px;margin:2px;font-size:12px">${esc(x.name)}${x.active?'':' <span class="neg">(비활성)</span>'}${x.keywords&&x.keywords.length?` <span class="note">[${esc(x.keywords.join(', '))}]</span>`:''}<button class="btn btn-ghost btn-sm" data-act="sbedit" data-id="${x.id}">수정</button><button class="btn btn-ghost btn-sm" data-act="sbdel" data-id="${x.id}">삭제</button></span>`).join('')} <button class="btn btn-ghost btn-sm" data-act="sbadd" data-id="${i.id}">+ 적요</button></td></tr>`};
   const catRow=c=>`<div class="card"><div class="card-head"><h3>${esc(c.name)} ${c.active?'':'<span class="st st-rejected">비활성</span>'}</h3>
-   <div><button class="btn btn-ghost btn-sm" data-act="catren" data-id="${c.id}">이름변경</button> <button class="btn btn-ghost btn-sm" data-act="cattog" data-id="${c.id}">${c.active?'비활성화':'활성화'}</button></div></div>
+   <div><button class="btn btn-ghost btn-sm" data-act="catren" data-id="${c.id}">이름변경</button> <button class="btn btn-ghost btn-sm" data-act="cattog" data-id="${c.id}">${c.active?'비활성화':'활성화'}</button> <button class="btn btn-ghost btn-sm" data-act="catdel" data-id="${c.id}">삭제</button></div></div>
    <div class="tblwrap"><table class="tbl"><thead><tr><th>목</th><th>적용 부서</th><th class="ctr">순서</th><th>상태</th><th></th></tr></thead><tbody>
    ${S.items.filter(i=>i.category_id===c.id).map(i=>`<tr><td>${esc(i.name)}${i.keywords&&i.keywords.length?`<div class="note">${esc(i.keywords.join(', '))}</div>`:''}</td><td>${i.dept_id?esc(dn(i.dept_id)):'전 부서 공통'}</td><td class="ctr">${i.sort_order}</td><td>${i.active?'사용':'<span class="neg">비활성</span>'}</td><td style="white-space:nowrap"><button class="btn btn-ghost btn-sm" data-act="itedit" data-id="${i.id}">수정</button> <button class="btn btn-ghost btn-sm" data-act="itdel" data-id="${i.id}">삭제</button></td></tr>${subRow(i)}`).join('')||'<tr><td colspan="5" class="empty">등록된 목이 없습니다. (목이 없으면 항 단위로만 신청됩니다)</td></tr>'}
    </tbody></table></div><div class="card-body"><button class="btn btn-primary btn-sm" data-act="itadd" data-id="${c.id}">+ 목 추가</button></div></div>`;
@@ -425,7 +429,7 @@ function setAcct(){
   <div style="display:flex;gap:14px;flex-wrap:wrap">${S.depts.map(d=>`<label class="chk"><input type="checkbox" class="mgx" value="${d.id}" ${d.merged?'checked':''}> ${esc(d.name)}</label>`).join('')}</div><br><button class="btn btn-primary btn-sm" data-act="mgsave">저장</button></div></div>`;
   const ac=S.cats.filter(c=>c.active);
   const dcCard=`<div class="card"><div class="card-head"><h3>부서별 사용 항</h3></div><div class="card-body"><p class="note">부서마다 사용하는 항을 선택합니다. 이미 예산·지출이 있는 항은 해제할 수 없습니다.</p><div class="tblwrap"><table class="scopegrid"><tr><th>부서</th>${ac.map(c=>`<th>${esc(c.name)}</th>`).join('')}</tr>${S.depts.map(d=>`<tr><th>${esc(d.name)}</th>${ac.map(c=>`<td><input type="checkbox" class="dcx" data-d="${d.id}" data-c="${c.id}" ${okCombo(d.id,c.id)?'checked':''}></td>`).join('')}</tr>`).join('')}</table></div><br><button class="btn btn-primary btn-sm" data-act="dcsave">저장</button></div></div>`;
-  $('#subbody').innerHTML=`<p class="note"><b>지출</b>의 항(공동운영비 등)과 목을 설정합니다. 계정은 <b>항 › 목 › 적요</b> 3단계입니다. 목·적요의 「자동 매핑 키워드」를 넣어 두면 지출 신청 때 <b>내용</b>에서 자동 선택됩니다. (수입 항목은 [수입 계정항목]에서 설정) 이미 사용된 목은 삭제 대신 비활성화하세요.</p>${mgCard}${dcCard}${S.cats.map(catRow).join('')}<button class="btn btn-gold" data-act="catadd">+ 항 추가</button>`;
+  $('#subbody').innerHTML=`<p class="note"><b>지출</b>의 항(공동운영비 등)과 목을 설정합니다. 계정은 <b>항 › 목 › 적요</b> 3단계입니다. 목·적요의 「자동 매핑 키워드」를 넣어 두면 지출 신청 때 <b>내용</b>에서 자동 선택됩니다. (수입 항목은 [수입 계정항목]에서 설정) 삭제하면 그 항목을 쓴 내역은 미분류가 되니, 계속 보관할 항목은 삭제 대신 비활성화하세요.</p>${mgCard}${dcCard}${S.cats.map(catRow).join('')}<button class="btn btn-gold" data-act="catadd">+ 항 추가</button>`;
 }
 function itemModal(it,catId){
   const m=modal(`<h3>${it?'목 수정':'목 추가'}</h3><div class="field"><label>항</label><select id="mc">${S.cats.map(c=>`<option value="${c.id}" ${c.id===(it?it.category_id:+catId)?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
@@ -452,7 +456,7 @@ function subModal(x,itemId){
 async function setAct(a,id){
   if(a==='sbadd')return subModal(null,id);
   if(a==='sbedit')return subModal((S.subs||[]).find(x=>x.id===+id));
-  if(a==='sbdel'){if(!confirm('이 적요를 삭제할까요? (사용 이력이 있으면 삭제되지 않습니다)'))return;try{await rpc('delete_sub_item',{p_id:+id});await loadStatic();render()}catch(_){}return}
+  if(a==='sbdel'){if(!confirm('이 적요를 삭제할까요?\n\n· 이 적요를 쓴 지출 내역은 적요가 빈 칸으로 바뀝니다.\n· 예산 수립표의 금액은 목 단위로 합쳐집니다.\n\n되돌릴 수 없습니다.'))return;try{await rpc('delete_sub_item',{p_id:+id});await loadStatic();render()}catch(_){}return}
   try{
     if(a==='mgsave'){const ids=[...document.querySelectorAll('.mgx:checked')].map(x=>+x.value);await rpc('set_dept_merge',{p_depts:ids});toast('저장했습니다.');await loadStatic();S.plan=null;renderTabs();render()}
     if(a==='dcsave'){for(const d of S.depts){const ids=[...document.querySelectorAll(`.dcx[data-d="${d.id}"]:checked`)].map(x=>+x.dataset.c).concat(S.cats.filter(c=>!c.active&&okCombo(d.id,c.id)).map(c=>c.id));await rpc('set_dept_categories',{p_dept:d.id,p_cats:ids})}toast('저장했습니다.')}
@@ -461,7 +465,8 @@ async function setAct(a,id){
     if(a==='cattog'){const c=S.cats.find(x=>x.id===+id);await rpc('upsert_category',{p_id:c.id,p_name:c.name,p_active:!c.active})}
     if(a==='itadd')return itemModal(null,id);
     if(a==='itedit')return itemModal(S.items.find(x=>x.id===+id));
-    if(a==='itdel'){if(!confirm('이 목을 삭제할까요? (사용 이력이 있으면 삭제되지 않습니다)'))return;await rpc('delete_item',{p_id:+id})}
+    if(a==='itdel'){if(!confirm('이 목을 삭제할까요?\n\n· 이 목을 쓴 지출 내역은 목·적요가 빈 칸(미분류)으로 바뀝니다.\n· 이 목의 적요도 함께 삭제됩니다.\n· 예산 수립표의 금액은 항 단위로 합쳐집니다.\n\n되돌릴 수 없습니다.'))return;await rpc('delete_item',{p_id:+id})}
+    if(a==='catdel'){const c=S.cats.find(x=>x.id===+id);if(!confirm(`'${c.name}' 항을 삭제할까요?\n\n이 항의 목·적요·예산표·권한 설정도 함께 삭제됩니다. 이 항을 쓴 지출 내역이 있으면 삭제되지 않습니다(먼저 내역을 다른 항으로 수정하세요).\n\n되돌릴 수 없습니다.`))return;await rpc('delete_category',{p_id:+id})}
     await loadStatic();render();
   }catch(_){}
 }
@@ -703,7 +708,24 @@ function renderIncome(){
 function txTable(rows,withBal){
   if(!rows.length)return '<div class="empty">내역이 없습니다.</div>';
   const an=id=>esc(S.accts.find(x=>x.id===id)?.label||'-');
-  return `<div class="tblwrap"><table class="tbl"><thead><tr><th>일자</th><th>계좌</th><th>부서 / 항</th><th>내용</th><th>구분</th><th class="num">입금</th><th class="num">출금</th>${withBal?'<th class="num">잔액</th>':''}<th></th></tr></thead><tbody>${rows.map(t=>`<tr${t.deleted_at?' style="opacity:.4;text-decoration:line-through"':''}><td>${t.tx_date}</td><td>${an(t.account_id)}</td><td>${t.dept_id?esc(dn(t.dept_id))+' · '+esc(t.inc_cat_id?incCn(t.inc_cat_id)+(t.inc_item_id?' / '+incIn(t.inc_item_id):''):cn(t.category_id)):'-'}</td><td>${esc(t.description)}</td><td>${SRC[t.source]}</td><td class="num">${t.kind==='in'?won(t.amount):''}</td><td class="num">${t.kind==='out'?won(t.amount):''}</td>${withBal?`<td class="num">${t._bal!==undefined?won(t._bal):''}</td>`:''}<td>${isAdmin()&&!t.deleted_at?`<button class="btn btn-ghost btn-sm" data-act="vtx" data-id="${t.id}">취소</button>`:''}</td></tr>`).join('')}</tbody></table></div>`}
+  return `<div class="tblwrap"><table class="tbl"><thead><tr><th>일자</th><th>계좌</th><th>부서 / 항</th><th>내용</th><th>구분</th><th class="num">입금</th><th class="num">출금</th>${withBal?'<th class="num">잔액</th>':''}<th></th></tr></thead><tbody>${rows.map(t=>`<tr${t.deleted_at?' style="opacity:.4;text-decoration:line-through"':''}><td>${t.tx_date}</td><td>${an(t.account_id)}</td><td>${t.dept_id?esc(dn(t.dept_id))+' · '+esc(t.inc_cat_id?incCn(t.inc_cat_id)+(t.inc_item_id?' / '+incIn(t.inc_item_id):''):cn(t.category_id)):'-'}</td><td>${esc(t.description)}</td><td>${SRC[t.source]}</td><td class="num">${t.kind==='in'?won(t.amount):''}</td><td class="num">${t.kind==='out'?won(t.amount):''}</td>${withBal?`<td class="num">${t._bal!==undefined?won(t._bal):''}</td>`:''}<td style="white-space:nowrap">${isAdmin()&&!t.deleted_at?(['income','fund_request'].includes(t.source)?`<button class="btn btn-ghost btn-sm" data-act="etx" data-id="${t.id}">수정</button> `:'')+`<button class="btn btn-ghost btn-sm" data-act="vtx" data-id="${t.id}">취소</button>`:''}</td></tr>`).join('')}</tbody></table></div>`}
+function txEditModal(t){
+  const fixed=t.source==='fund_request';
+  const m=modal(`<h3>수입 내역 수정 (관리자)</h3>
+  <div class="grid2"><div class="field"><label>부서</label><select id="xd">${S.depts.map(d=>`<option value="${d.id}" ${d.id===t.dept_id?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>
+  <div class="field"><label>날짜</label><input id="xdt" type="date" value="${t.tx_date}"></div></div>
+  <div class="grid2"><div class="field"><label>수입 항</label><select id="xc"><option value="">(미분류)</option>${S.incCats.filter(c=>c.active||c.id===t.inc_cat_id).map(c=>`<option value="${c.id}" ${c.id===t.inc_cat_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>
+  <div class="field"><label>수입 목</label><select id="xi"></select></div></div>
+  <div class="field"><label>금액</label><input id="xa" type="number" value="${t.amount}" ${fixed?'disabled':''}>${fixed?'<div class="note">청구 입금의 금액은 청구와 연결되어 있어 바꿀 수 없습니다.</div>':''}</div>
+  <div class="field"><label>내용</label><input id="xs" value="${esc(t.description)}"></div>
+  <div class="actions"><button class="btn btn-ghost" id="xx">닫기</button><button class="btn btn-primary" id="xok">저장</button></div>`);
+  const q=x=>m.querySelector(x);
+  const fi=()=>{const c=+q('#xc').value,its=S.incItems.filter(i=>i.category_id===c&&(i.active||i.id===t.inc_item_id));
+    q('#xi').innerHTML='<option value="">(없음)</option>'+its.map(i=>`<option value="${i.id}" ${i.id===t.inc_item_id?'selected':''}>${esc(i.name)}</option>`).join('')};
+  q('#xc').onchange=fi;fi();
+  q('#xx').onclick=()=>m.remove();
+  q('#xok').onclick=async()=>{try{await rpc('admin_update_tx',{p_id:t.id,p_dept:+q('#xd').value,p_inc_cat:q('#xc').value?+q('#xc').value:null,p_inc_item:q('#xi').value?+q('#xi').value:null,p_amount:+q('#xa').value,p_date:q('#xdt').value,p_desc:q('#xs').value});m.remove();toast('수정했습니다.');await loadYear();render()}catch(_){}};
+}
 function renderIncList(){
   const rows=S.tx.filter(t=>t.kind==='in'&&!t.deleted_at&&t.source!=='transfer'),tot=rows.reduce((s,t)=>s+ +t.amount,0);
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${S.year}년 수입 내역 (${rows.length}건 · ${won(tot)}원)</h3></div>${txTable(rows)}</div>`}
@@ -764,10 +786,11 @@ document.addEventListener('click',async ev=>{
   if(t.dataset.tab){S.tab=t.dataset.tab;renderTabs();return render()}
   if(t.dataset.sub){S.sub=t.dataset.sub;return render()}
   const a=t.dataset.act,id=t.dataset.id;
+  if(a==='etx'){const tx=(S.tx||[]).find(x=>x.id===+id);if(tx)txEditModal(tx);return}
   if(['annnew','annedit','anndel','fprt','fdep','fcan','vtx','snap'].includes(a))return miscAct(a,id);
   if(['pcopy','pgroup','pall','acctsave','acctedit','acctcancel'].includes(a))return payAct(a,t.dataset.i??id);
-  if(['catadd','catren','cattog','itadd','itedit','itdel','sbadd','sbedit','sbdel'].includes(a))return setAct(a,id);
-  if(['icadd','icedit','iiadd','iiedit'].includes(a))return incAct(a,id);
+  if(['catadd','catren','cattog','catdel','itadd','itedit','itdel','sbadd','sbedit','sbdel'].includes(a))return setAct(a,id);
+  if(['icadd','icedit','icdel','iiadd','iiedit','iidel'].includes(a))return incAct(a,id);
   if(a==='aprm'){S.apRows.splice(+id,1);return S.apPaint()}
   if(a==='yearadd'){const v=+$('#newYear').value;if(!v)return toast('추가할 연도를 입력하세요.',true);try{await rpc('add_fiscal_year',{p_year:v});toast(v+'년을 추가했습니다.');await loadStatic();hySync();renderTabs();render()}catch(_){}return}
   if(a==='lock'){const y=S.years.find(v=>v.year===+id);try{await rpc('set_year_lock',{p_year:y.year,p_locked:!y.locked});await loadStatic();await loadYear();renderTabs();render()}catch(_){}return}
@@ -776,7 +799,10 @@ document.addEventListener('click',async ev=>{
 });
 document.addEventListener('click',ev=>{if(ev.target.id==='reqBtn')submitReq()});
 $('#lf').addEventListener('submit',e=>{e.preventDefault();login()});
-try{const v=localStorage.getItem('sh_id');if(v)$('#lid').value=v;else $('#lrem').checked=false;$('#lkeep').checked=KEEP()}catch(_){}
+document.querySelectorAll('.hbrand img,.hbrand h1').forEach(el=>{el.title='지출 신청으로 이동';el.addEventListener('click',()=>{if(!S.me)return;document.querySelectorAll('.modal-bg').forEach(x=>x.remove());S.tab='req';renderTabs();render();window.scrollTo(0,0)})});
+try{const v=localStorage.getItem('sh_id'),sv=localStorage.getItem('sh_save');if(v)$('#lid').value=v;$('#lrem').checked=sv?sv==='1':true}catch(_){}
+// 저장해 둔 비밀번호를 브라우저 비밀번호 관리자에서 불러와 채움(지원 브라우저: Chrome·Edge·삼성 인터넷 등. 아이폰 Safari는 키체인 자동완성)
+(async()=>{try{if(!$('#lrem').checked||!window.PasswordCredential||!navigator.credentials)return;const c=await navigator.credentials.get({password:true,mediation:'optional'});if(c&&c.password&&!$('#lpw').value){$('#lid').value=c.id;$('#lpw').value=c.password}}catch(_){}})();
 $('#logoutBtn').onclick=async()=>{await sb.auth.signOut();S.me=null;$('#app').style.display='none';$('#login').style.display='block';$('#lpw').value=''};
 $('#refreshBtn').onclick=async()=>{await reload();toast('새로고침했습니다.');annPopup()};
 $('#hyear').onchange=async e=>{S.year=+e.target.value;await loadYear();renderTabs();render()};
@@ -874,11 +900,11 @@ function printExpense(e){printResolutions([{dt:e.expense_date,dept_id:e.dept_id,
 /* ── 수입 계정항목 설정 ── */
 function setInc(){
   const cats=[...S.incCats].sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);
-  $('#subbody').innerHTML=`<p class="note">수입의 항(대분류)·목(소분류)을 설정합니다. 「전년도 이월금」「본부 지원금(청구)」은 시스템과 연동되는 항이라 이름만 바꿀 수 있습니다. 이미 사용된 항·목은 삭제 대신 비활성화하세요.</p>
+  $('#subbody').innerHTML=`<p class="note">수입의 항(대분류)·목(소분류)을 설정합니다. 「전년도 이월금」「본부 지원금(청구)」은 시스템과 연동되는 항이라 이름만 바꿀 수 있습니다. 삭제하면 그 항·목을 쓴 수입 내역은 미분류가 되니, 계속 보관할 항목은 삭제 대신 비활성화하세요.</p>
   <div style="margin-bottom:10px"><button class="btn btn-primary btn-sm" data-act="icadd">+ 수입 항 추가</button></div>
   ${cats.map(c=>{const its=S.incItems.filter(i=>i.category_id===c.id).sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);
-  return `<div class="card"><div class="card-head"><h3${c.active?'':' style="opacity:.5"'}>${esc(c.name)}${c.sys?' <span class="note">(시스템 연동)</span>':''}${c.active?'':' (비활성)'}</h3><div><button class="btn btn-ghost btn-sm" data-act="icedit" data-id="${c.id}">수정</button> <button class="btn btn-ghost btn-sm" data-act="iiadd" data-id="${c.id}">+ 목 추가</button></div></div>
-  <div class="card-body">${its.length?`<table class="tbl"><tbody>${its.map(i=>`<tr${i.active?'':' style="opacity:.5"'}><td>${esc(i.name)}${i.active?'':' (비활성)'}</td><td style="width:70px"><button class="btn btn-ghost btn-sm" data-act="iiedit" data-id="${i.id}">수정</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">목이 없습니다. (목 없이 항만으로도 사용할 수 있습니다)</div>'}</div></div>`}).join('')}`;
+  return `<div class="card"><div class="card-head"><h3${c.active?'':' style="opacity:.5"'}>${esc(c.name)}${c.sys?' <span class="note">(시스템 연동)</span>':''}${c.active?'':' (비활성)'}</h3><div><button class="btn btn-ghost btn-sm" data-act="icedit" data-id="${c.id}">수정</button> ${c.sys?'':`<button class="btn btn-ghost btn-sm" data-act="icdel" data-id="${c.id}">삭제</button> `}<button class="btn btn-ghost btn-sm" data-act="iiadd" data-id="${c.id}">+ 목 추가</button></div></div>
+  <div class="card-body">${its.length?`<table class="tbl"><tbody>${its.map(i=>`<tr${i.active?'':' style="opacity:.5"'}><td>${esc(i.name)}${i.active?'':' (비활성)'}</td><td style="width:120px;white-space:nowrap"><button class="btn btn-ghost btn-sm" data-act="iiedit" data-id="${i.id}">수정</button> <button class="btn btn-ghost btn-sm" data-act="iidel" data-id="${i.id}">삭제</button></td></tr>`).join('')}</tbody></table>`:'<div class="empty">목이 없습니다. (목 없이 항만으로도 사용할 수 있습니다)</div>'}</div></div>`}).join('')}`;
 }
 function incModal(title,o){ // o:{name,sort,active,sys,catSel}
   return new Promise(res=>{const m=modal(`<h3>${title}</h3>${o.catSel?`<div class="field"><label>항</label><select id="mc">${S.incCats.map(c=>`<option value="${c.id}" ${c.id===o.cat?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div>`:''}
@@ -888,6 +914,9 @@ function incModal(title,o){ // o:{name,sort,active,sys,catSel}
   m.querySelector('#mx').onclick=()=>{m.remove();res(null)};
   m.querySelector('#mok').onclick=()=>{const v={name:m.querySelector('#mn').value,sort:+m.querySelector('#ms').value||0,active:o.sys?true:m.querySelector('#ma').checked,cat:o.catSel?+m.querySelector('#mc').value:null};m.remove();res(v)}})}
 async function incAct(a,id){
+  if(a==='icdel'||a==='iidel'){const c=a==='icdel'?S.incCats.find(x=>x.id===+id):S.incItems.find(x=>x.id===+id);
+    if(!confirm(a==='icdel'?`'${c.name}' 수입 항을 삭제할까요?\n\n· 이 항을 쓴 수입 내역은 (미분류)로 바뀝니다.\n· 이 항의 목과 예산 수립표 줄도 함께 삭제됩니다.\n\n되돌릴 수 없습니다.`:`'${c.name}' 수입 목을 삭제할까요?\n\n· 이 목을 쓴 수입 내역은 목이 빈 칸으로 바뀝니다.\n· 예산 수립표의 금액은 항 단위로 합쳐집니다.\n\n되돌릴 수 없습니다.`))return;
+    try{await rpc(a==='icdel'?'delete_income_category':'delete_income_item',{p_id:+id});toast('삭제했습니다.');await loadStatic();render()}catch(_){}return}
   try{
     if(a==='icadd'){const v=await incModal('수입 항 추가',{});if(!v)return;await rpc('save_income_category',{p_id:null,p_name:v.name,p_sort:v.sort,p_active:v.active})}
     if(a==='icedit'){const c=S.incCats.find(x=>x.id===+id);const v=await incModal('수입 항 수정',{name:c.name,sort:c.sort_order,active:c.active,sys:!!c.sys});if(!v)return;await rpc('save_income_category',{p_id:c.id,p_name:v.name,p_sort:v.sort,p_active:v.active})}
