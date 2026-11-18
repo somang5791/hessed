@@ -16,6 +16,7 @@ header{background:#fff;color:var(--ink);border-bottom:1px solid var(--rule);padd
 .hbrand{display:flex;align-items:center;gap:8px;min-width:0}.hbrand img{width:36px;height:36px;flex-shrink:0}.hbrand h1{letter-spacing:.12em}
 .hbrand img,.hbrand h1{cursor:pointer}
 .hbrand h1{font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmopt{display:block;border:1.5px solid var(--rule);border-radius:8px;padding:10px 12px;cursor:pointer;margin:0}.pmopt:has(input:checked){border-color:var(--blue);background:#eef3fb}.pmopt .note{margin:2px 0 0 20px}
 .hyear{font-size:16.66px;font-weight:900;color:var(--blue);line-height:1.2;white-space:nowrap;flex-shrink:0;border:none;background:transparent;font-family:inherit;cursor:pointer;padding:2px 0;outline:none}
 .hyear:hover,.hyear:focus{background:var(--paper2);border-radius:4px}
 @media(max-width:480px){header{padding:0 8px}.hright{gap:4px}.hbrand{gap:4px}.hbrand img{width:30px;height:30px}.hbrand h1{letter-spacing:.02em}.hright .btn{padding:4px 8px}.lktxt{display:none}.lockbadge{padding:1px 4px}}
@@ -216,23 +217,23 @@ function renderReq(){
   const ds=[...new Set(cb.map(x=>x.dept_id))];
   const step=(n,t)=>`<div style="font-size:12px;font-weight:800;color:var(--blue);margin:14px 0 6px">${n}. ${t}</div>`;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>지출 신청</h3></div><div class="card-body">
-  ${step(1,'영수증')}<div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"><div class="hint" style="margin-top:4px">📷 영수증 촬영 날짜가 자동으로 매핑됩니다. 당일 지출은 당일 영수증을 촬영해 주세요!</div><img id="rprev" alt="" style="display:none;max-height:140px;max-width:100%;margin-top:8px;border-radius:6px;border:1px solid var(--rule)"></div>
-  ${step(2,'날짜 · 금액')}<div class="grid2"><div class="field"><label>지출일 <span class="req">*</span></label><input id="rdt" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><div id="dtHint" class="hint"></div><div id="yrHint" class="hint"></div></div>
+  ${step(1,'결제 방법')}<div class="grid2"><label class="pmopt"><input type="radio" name="rpm" value="transfer" checked> <b>개인 결제</b><div class="note">내 돈으로 먼저 결제 → 전도금으로 지급받기</div></label><label class="pmopt"><input type="radio" name="rpm" value="card"> <b>교회 법인카드</b><div class="note">법인카드로 결제 (지급받을 돈 없음)</div></label></div>
+  ${step(2,'영수증')}<div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"><div class="hint" style="margin-top:4px">📷 영수증 촬영 날짜가 자동으로 매핑됩니다. 당일 지출은 당일 영수증을 촬영해 주세요!</div><img id="rprev" alt="" style="display:none;max-height:140px;max-width:100%;margin-top:8px;border-radius:6px;border:1px solid var(--rule)"></div>
+  ${step(3,'날짜 · 금액')}<div class="grid2"><div class="field"><label>지출일 <span class="req">*</span></label><input id="rdt" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><div id="dtHint" class="hint"></div><div id="yrHint" class="hint"></div></div>
   <div class="field"><label>금액(원) <span class="req">*</span></label><input id="ra" type="number" min="1" inputmode="numeric"><div id="balLine" class="hint"></div></div></div>
-  ${step(3,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="예: 부활절 행사 간식 구입 (청년 40명)"><div id="mapHint" class="hint"></div></div>
-  ${step(4,'계정 (내용을 쓰면 자동으로 골라집니다. 직접 바꿀 수 있어요)')}
+  ${step(4,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="예: 부활절 행사 간식 구입 (청년 40명)"><div id="mapHint" class="hint"></div></div>
+  ${step(5,'계정 (내용을 쓰면 자동으로 골라집니다. 직접 바꿀 수 있어요)')}
   <div class="grid2"><div class="field"><label>부서 <span class="req">*</span></label><select id="rd">${ds.map(d=>`<option value="${d}">${esc(dn(d))}</option>`).join('')}</select></div>
   <div class="field"><label>항 <span class="req">*</span></label><select id="rc"></select></div></div>
   <div class="grid2"><div class="field"><label>목</label><select id="ri"></select></div><div class="field"><label>적요</label><select id="rs"></select></div></div>
   <div class="field"><label>비고</label><input id="rn" maxlength="200"></div>
-  ${step(5,'결제 방법 · 입금받을 계좌')}<div class="field" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px"><label><input type="radio" name="rpm" value="transfer" checked> 내 돈으로 결제 (계좌로 정산받기)</label><label><input type="radio" name="rpm" value="card"> 교회 법인카드로 결제 (정산 없음)</label></div>
-  <div class="card" id="payBox" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
+  <div id="payBox">${step(6,'전도금 받을 계좌')}<div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
   <div class="field" id="ppickW" style="display:none"><label>최근 사용한 계좌</label><select id="ppick"></select></div>
   <div class="grid3"><div class="field"><label>예금주 <span class="req">*</span></label><input id="ph" maxlength="30" autocomplete="off"></div>
   <div class="field"><label>은행 <span class="req">*</span></label><input id="pb" maxlength="20" autocomplete="off" placeholder="예: 국민"></div>
   <div class="field"><label>계좌번호 <span class="req">*</span></label><input id="pa" maxlength="25" inputmode="numeric" autocomplete="off" placeholder="숫자와 -"></div></div>
   <label style="font-size:12px"><input type="checkbox" id="pr" checked> 이 기기에 기억하기 (다음 신청 때 자동으로 채워집니다)</label>
-  <p class="note">입력한 계좌 정보는 입금 처리를 위해서만 사용하며, 담당 회계·관리자만 볼 수 있습니다. 회계 기록 보존을 위해 5년간 보관한 뒤 파기합니다. 법령에 근거한 경우를 제외하고 제3자에게 제공하지 않습니다.</p></div></div>
+  <p class="note">입력한 계좌 정보는 입금 처리를 위해서만 사용하며, 담당 회계·관리자만 볼 수 있습니다. 회계 기록 보존을 위해 5년간 보관한 뒤 파기합니다. 법령에 근거한 경우를 제외하고 제3자에게 제공하지 않습니다.</p></div></div></div>
   <p class="note">영수증은 자동으로 줄여서 올라갑니다.</p>
   <button class="btn btn-primary" id="reqBtn">신청</button></div></div>`;
   let manual=false;
@@ -326,7 +327,7 @@ async function submitReq(){
   if(!fy)return toast(yr+'년 회계연도가 없습니다. 관리자에게 추가를 요청하세요.',true);
   if(!amt||amt<=0)return toast('금액을 입력하세요.',true);if(!desc)return toast('내용을 입력하세요.',true);
   const pm=document.querySelector('input[name=rpm]:checked')?.value==='card'?'card':'transfer';
-  if(pm==='transfer'&&(!ph||!pb||!pa))return toast('입금받을 예금주·은행·계좌번호를 입력하세요.',true);
+  if(pm==='transfer'&&(!ph||!pb||!pa))return toast('전도금 받을 예금주·은행·계좌번호를 입력하세요.',true);
   btn.disabled=true;btn.textContent='올리는 중…';
   try{
     const blob=await compress(f);const path=`${S.me.user_id}/${S.idem}.jpg`;
@@ -347,9 +348,8 @@ function renderList(){
     if(!e.deleted_at){
       if(e.status==='requested'&&canProcess(e))a.push(`<button class="btn btn-green btn-sm" data-act="approve" data-id="${e.id}">승인</button><button class="btn btn-danger btn-sm" data-act="reject" data-id="${e.id}">반려</button>`);
       if((e.status==='approved'||e.status==='requested')&&canProcess(e)&&isMoney())a.push(e.pay_method==='card'?`<button class="btn btn-gold btn-sm" data-act="cardok" data-id="${e.id}">결제확인</button>`:`<button class="btn btn-gold btn-sm" data-tab="pay">입금관리</button>`);
-      if(e.status==='requested'&&mine)a.push(`<button class="btn btn-ghost btn-sm" data-act="cancel" data-id="${e.id}">취소</button>`);
       a.push(`<button class="btn btn-ghost btn-sm" data-act="print" data-id="${e.id}">인쇄</button>`);
-      if(isAdmin())a.push(`<button class="btn btn-ghost btn-sm" data-act="edit" data-id="${e.id}">수정</button><button class="btn btn-ghost btn-sm" data-act="del" data-id="${e.id}">삭제</button>`);
+      if(canEditExp(e))a.push(`<button class="btn btn-ghost btn-sm" data-act="edit" data-id="${e.id}">수정</button><button class="btn btn-ghost btn-sm" data-act="del" data-id="${e.id}">삭제</button>`);
     }else if(isAdmin())a.push(`<button class="btn btn-ghost btn-sm" data-act="restore" data-id="${e.id}">복구</button>`);
     return `<tr><td class="num">${e.voucher_no??''}</td><td>${e.expense_date}</td><td>${esc(dn(e.dept_id))}</td><td>${esc(cn(e.category_id))}${e.item_id?' / '+esc(inm(e.item_id)):''}${e.sub_item_id?' / '+esc(snm(e.sub_item_id)):''}</td><td>${esc(e.description)}${e.note?`<div class="note">${esc(e.note)}</div>`:''}${e.reject_reason?`<div class="note neg">반려: ${esc(e.reject_reason)}</div>`:''}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td class="ctr"><span class="st st-${e.status}">${e.pay_method==='card'&&e.status==='paid'?'결제완료':ST[e.status]}</span>${e.pay_method==='card'?'<div class="note">법인카드</div>':''}</td><td style="white-space:nowrap">${a.join(' ')}</td></tr>`};
   const th='<thead><tr><th class="num">No.</th><th>지출일</th><th>부서</th><th>항/목/적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th><th></th></tr></thead>';
@@ -371,29 +371,62 @@ async function act(a,id){
     if(a==='cardok'){if(!confirm(`[법인카드] ${e.description} ${won(e.amount)}원\n\n교회 법인카드 결제를 확인했나요? 확인하면 '결제완료'가 됩니다.\n(청년회 계좌 출금 기록은 만들지 않습니다)`))return;await rpc('confirm_card_expense',{p_id:e.id});toast('결제확인했습니다.')}
     if(a==='reject'){const r=prompt('반려 사유를 입력하세요.');if(!r)return;await rpc('reject_expense',{p_id:e.id,p_reason:r});toast('반려했습니다.')}
     if(a==='cancel'){if(!confirm('이 신청을 취소할까요?'))return;await rpc('cancel_expense',{p_id:e.id});toast('취소했습니다.')}
-    if(a==='del'){if(!confirm('삭제(휴지통 이동)할까요?'))return;await rpc('admin_delete_expense',{p_id:e.id});toast('휴지통으로 이동했습니다.')}
+    if(a==='del'){if(!confirm(`이 지출 내역을 삭제할까요?\n\n${e.description} · ${won(e.amount)}원\n\n· 휴지통으로 이동하며, 관리자가 복구할 수 있습니다.`+(e.status==='paid'&&e.pay_method!=='card'?'\n· 이미 지급된 건이라 계좌 출금 기록도 함께 취소됩니다.':'')))return;await rpc('delete_expense',{p_id:e.id});toast('삭제했습니다.')}
     if(a==='restore'){await rpc('admin_restore_expense',{p_id:e.id});toast('복구했습니다.')}
     await loadYear();renderTabs();render();
   }catch(_){}
 }
 function modal(html){const m=document.createElement('div');m.className='modal-bg';m.innerHTML=`<div class="modal">${html}</div>`;m.addEventListener('click',ev=>{if(ev.target===m)m.remove()});document.body.appendChild(m);return m}
+// 지출 수정·삭제 가능 여부 (서버 assert_can_edit_expense와 같은 기준)
+function canEditExp(e){
+  if(isAdmin())return true;
+  if(S.years.find(y=>y.year===e.fiscal_year)?.locked)return false;
+  if(S.me.role==='accountant'&&hasScope(e.dept_id,e.category_id))return true;
+  return e.requested_by===S.me.user_id&&['requested','rejected'].includes(e.status);
+}
 function editModal(e){
-  const m=modal(`<h3>지출 수정 (관리자)</h3><div class="grid2"><div class="field"><label>부서</label><select id="ed">${S.depts.map(d=>`<option value="${d.id}" ${d.id===e.dept_id?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>
-  <div class="field"><label>항</label><select id="ec">${S.cats.map(c=>`<option value="${c.id}" ${c.id===e.category_id?'selected':''}>${esc(c.name)}</option>`).join('')}</select></div></div>
+  const paid=e.status==='paid',pm0=e.pay_method||'transfer';
+  // 부서·항 선택지: 관리자는 전체, 그 외에는 내 권한 범위 + 지금 값
+  const cb=allowedCombos();if(!cb.some(x=>x.dept_id===e.dept_id&&x.category_id===e.category_id))cb.push({dept_id:e.dept_id,category_id:e.category_id});
+  const ds=[...new Set(cb.map(x=>x.dept_id))];
+  const m=modal(`<h3>지출 수정${e.voucher_no?` <span class="note">No. ${e.voucher_no}</span>`:''}</h3>
+  ${e.status==='rejected'?`<p class="note neg">반려 사유: ${esc(e.reject_reason||'')}${e.requested_by===S.me.user_id?' — 고쳐서 저장하면 다시 신청됩니다.':''}</p>`:''}
+  <div class="field"><label>결제 방법</label><div style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px">
+    <label><input type="radio" name="epm" value="transfer" ${pm0==='transfer'?'checked':''} ${paid?'disabled':''}> 개인 결제 (전도금 지급)</label>
+    <label><input type="radio" name="epm" value="card" ${pm0==='card'?'checked':''} ${paid?'disabled':''}> 교회 법인카드</label></div>
+    ${paid?'<div class="note">이미 지급·결제된 건은 결제 방법을 바꿀 수 없습니다.</div>':''}</div>
+  <div class="grid2"><div class="field"><label>부서</label><select id="ed">${ds.map(d=>`<option value="${d}" ${d===e.dept_id?'selected':''}>${esc(dn(d))}</option>`).join('')}</select></div>
+  <div class="field"><label>항</label><select id="ec"></select></div></div>
   <div class="grid2"><div class="field"><label>목</label><select id="ei"></select></div><div class="field"><label>적요</label><select id="es"></select></div></div>
   <div class="grid2"><div class="field"><label>금액</label><input id="ea" type="number" value="${e.amount}"></div><div class="field"><label>지출일</label><input id="edt" type="date" value="${e.expense_date}"></div></div>
   <div class="field"><label>내용</label><input id="edesc" value="${esc(e.description)}"></div><div class="field"><label>비고</label><input id="en" value="${esc(e.note||'')}"></div>
-  <p class="note">이미 입금된 건은 계좌 거래내역의 금액·계정도 함께 고쳐집니다.</p>
+  <div id="epay" class="card" style="background:var(--paper)"><div class="card-body" style="padding:10px 12px"><b style="font-size:12px">전도금 받을 계좌</b>
+  <div class="grid3" style="margin-top:6px"><div class="field"><label>예금주</label><input id="eph" maxlength="30" autocomplete="off"></div>
+  <div class="field"><label>은행</label><input id="epb" maxlength="20" autocomplete="off"></div>
+  <div class="field"><label>계좌번호</label><input id="epa" maxlength="25" inputmode="numeric" autocomplete="off"></div></div><div id="epnote" class="note"></div></div></div>
+  <p class="note">${paid?'이미 지급된 건은 계좌 거래내역의 금액·계정도 함께 고쳐집니다. ':''}지출일은 ${e.fiscal_year}년 안에서만 바꿀 수 있습니다.</p>
   <div class="actions"><button class="btn btn-ghost" id="ecancel">닫기</button><button class="btn btn-primary" id="esave">저장</button></div>`);
-  const q=x=>m.querySelector(x);
+  const q=x=>m.querySelector(x),pmv=()=>m.querySelector('input[name=epm]:checked')?.value||pm0;
   const fs=()=>{const it=+q('#ei').value,ss=(S.subs||[]).filter(x=>x.item_id===it&&(x.active||x.id===e.sub_item_id));
     q('#es').innerHTML='<option value="">(없음)</option>'+ss.map(x=>`<option value="${x.id}" ${x.id===e.sub_item_id?'selected':''}>${esc(x.name)}</option>`).join('')};
   const fi=()=>{const its=itemsFor(q('#ed').value,q('#ec').value);
     if(e.item_id&&!its.some(i=>i.id===e.item_id)){const o=S.items.find(i=>i.id===e.item_id&&i.category_id===+q('#ec').value);if(o)its.push(o)}
     q('#ei').innerHTML='<option value="">(없음)</option>'+its.map(i=>`<option value="${i.id}" ${i.id===e.item_id?'selected':''}>${esc(i.name)}</option>`).join('');fs()};
-  q('#ed').onchange=fi;q('#ec').onchange=fi;q('#ei').onchange=fs;fi();
+  const fc=()=>{const d=+q('#ed').value,cs=[...new Set(cb.filter(x=>x.dept_id===d).map(x=>x.category_id))];
+    q('#ec').innerHTML=cs.map(c=>`<option value="${c}" ${c===e.category_id?'selected':''}>${esc(cn(c))}</option>`).join('');fi()};
+  const ps=()=>{q('#epay').style.display=pmv()==='card'?'none':''};
+  m.querySelectorAll('input[name=epm]').forEach(r=>r.onchange=ps);
+  q('#ed').onchange=fc;q('#ec').onchange=fi;q('#ei').onchange=fs;fc();ps();
+  // 입금 계좌 불러오기 (본인·담당 회계·관리자만 보임)
+  if(pm0==='transfer')sb.from('expense_payees').select('bank_name,account_no,account_holder').eq('expense_id',e.id).then(({data})=>{const p=(data||[])[0];
+    if(p){q('#eph').value=p.account_holder;q('#epb').value=p.bank_name;q('#epa').value=p.account_no}else q('#epnote').textContent='등록된 계좌를 불러오지 못했습니다. 다시 입력해 주세요.'});
   q('#ecancel').onclick=()=>m.remove();
-  q('#esave').onclick=async()=>{try{await rpc('admin_update_expense',{p_id:e.id,p_dept:+q('#ed').value,p_cat:+q('#ec').value,p_item:q('#ei').value?+q('#ei').value:null,p_sub_item:q('#es').value?+q('#es').value:null,p_amount:+q('#ea').value,p_description:q('#edesc').value,p_note:q('#en').value||null,p_date:q('#edt').value});m.remove();toast('수정했습니다.');await loadYear();render()}catch(_){}};
+  q('#esave').onclick=async()=>{const pm=pmv();
+    if(pm==='transfer'&&(!q('#eph').value.trim()||!q('#epb').value.trim()||!q('#epa').value.trim()))return toast('전도금 받을 예금주·은행·계좌번호를 입력하세요.',true);
+    try{await rpc('update_expense',{p_id:e.id,p_dept:+q('#ed').value,p_cat:+q('#ec').value,p_item:q('#ei').value?+q('#ei').value:null,p_sub_item:q('#es').value?+q('#es').value:null,
+      p_amount:+q('#ea').value,p_description:q('#edesc').value,p_note:q('#en').value||null,p_date:q('#edt').value,p_pay_method:pm,
+      p_payee_holder:pm==='card'?null:q('#eph').value.trim(),p_payee_bank:pm==='card'?null:q('#epb').value.trim(),p_payee_account:pm==='card'?null:q('#epa').value.trim()});
+      m.remove();toast('수정했습니다.');await loadYear();renderTabs();render()}catch(_){}};
 }
 function slotsBy(doc,o){return S.slots.filter(s=>s.doc_type===doc&&(s.owner_user_id||null)===(o||null)).sort((a,b)=>a.sort_order-b.sort_order)}
 /* 결재란 선택: 보는 사람이 담당회계면 본인 것 → 해당 부서 담당회계의 개별 결재란 → 기본 순서 */
