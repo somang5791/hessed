@@ -216,7 +216,7 @@ function renderReq(){
   const ds=[...new Set(cb.map(x=>x.dept_id))];
   const step=(n,t)=>`<div style="font-size:12px;font-weight:800;color:var(--blue);margin:14px 0 6px">${n}. ${t}</div>`;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>지출 신청</h3></div><div class="card-body">
-  ${step(1,'영수증')}<div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"><img id="rprev" alt="" style="display:none;max-height:140px;max-width:100%;margin-top:8px;border-radius:6px;border:1px solid var(--rule)"></div>
+  ${step(1,'영수증')}<div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"><div class="hint" style="margin-top:4px">📷 영수증 촬영 날짜가 자동으로 매핑됩니다. 당일 지출은 당일 영수증을 촬영해 주세요!</div><img id="rprev" alt="" style="display:none;max-height:140px;max-width:100%;margin-top:8px;border-radius:6px;border:1px solid var(--rule)"></div>
   ${step(2,'날짜 · 금액')}<div class="grid2"><div class="field"><label>지출일 <span class="req">*</span></label><input id="rdt" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><div id="dtHint" class="hint"></div><div id="yrHint" class="hint"></div></div>
   <div class="field"><label>금액(원) <span class="req">*</span></label><input id="ra" type="number" min="1" inputmode="numeric"><div id="balLine" class="hint"></div></div></div>
   ${step(3,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="예: 부활절 행사 간식 구입 (청년 40명)"><div id="mapHint" class="hint"></div></div>
