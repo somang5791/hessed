@@ -225,7 +225,9 @@ function renderReq(){
   <div class="field"><label>항 <span class="req">*</span></label><select id="rc"></select></div></div>
   <div class="grid2"><div class="field"><label>목</label><select id="ri"></select></div><div class="field"><label>적요</label><select id="rs"></select></div></div>
   <div class="field"><label>비고</label><input id="rn" maxlength="200"></div>
-  ${step(5,'입금받을 계좌')}<div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
+  ${step(5,'결제 방법 · 입금받을 계좌')}<div class="field" style="display:flex;gap:16px;flex-wrap:wrap;font-size:13px"><label><input type="radio" name="rpm" value="transfer" checked> 내 돈으로 결제 (계좌로 정산받기)</label><label><input type="radio" name="rpm" value="card"> 교회 법인카드로 결제 (정산 없음)</label></div>
+  <div class="card" id="payBox" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
+  <div class="field" id="ppickW" style="display:none"><label>최근 사용한 계좌</label><select id="ppick"></select></div>
   <div class="grid3"><div class="field"><label>예금주 <span class="req">*</span></label><input id="ph" maxlength="30" autocomplete="off"></div>
   <div class="field"><label>은행 <span class="req">*</span></label><input id="pb" maxlength="20" autocomplete="off" placeholder="예: 국민"></div>
   <div class="field"><label>계좌번호 <span class="req">*</span></label><input id="pa" maxlength="25" inputmode="numeric" autocomplete="off" placeholder="숫자와 -"></div></div>
@@ -268,6 +270,22 @@ function renderReq(){
   $('#rs').onchange=()=>{manual=true;$('#mapHint').textContent=''};
   $('#ra').oninput=bal;let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};fillC();yrInfo();bal();
   try{const m=JSON.parse(localStorage.getItem('sh_payee')||'null');if(m){$('#ph').value=m.h||'';$('#pb').value=m.b||'';$('#pa').value=m.a||''}}catch(_){}
+  const pmSync=()=>{$('#payBox').style.display=document.querySelector('input[name=rpm]:checked')?.value==='card'?'none':''};
+  document.querySelectorAll('input[name=rpm]').forEach(r=>r.onchange=pmSync);
+  loadMyPayees();
+}
+// 내가 전에 쓴 입금 계좌(서버 기록) → [최근 사용한 계좌] 목록. 빈 칸이면 가장 최근 계좌로 채움 (지결 양식의 '퀵버튼' 역할)
+async function loadMyPayees(){
+  try{
+    const {data}=await sb.from('expense_payees').select('expense_id,bank_name,account_no,account_holder').eq('user_id',S.me.user_id).order('expense_id',{ascending:false}).limit(100);
+    const seen=new Set(),list=(data||[]).filter(p=>{const k=p.account_holder+'|'+p.bank_name+'|'+String(p.account_no).replace(/-/g,'');if(seen.has(k))return false;seen.add(k);return true}).slice(0,10);
+    const sel=$('#ppick');if(!sel||!list.length)return;
+    const put=p=>{$('#ph').value=p.account_holder;$('#pb').value=p.bank_name;$('#pa').value=p.account_no};
+    sel.innerHTML='<option value="">— 고르면 아래 칸에 채워집니다 —</option>'+list.map((p,i)=>`<option value="${i}">${esc(p.account_holder)} · ${esc(p.bank_name)} ${esc(p.account_no)}</option>`).join('');
+    $('#ppickW').style.display='';
+    sel.onchange=()=>{const p=list[+sel.value];if(sel.value!==''&&p)put(p)};
+    if(!$('#ph').value&&!$('#pb').value&&!$('#pa').value)put(list[0]);
+  }catch(_){}
 }
 // JPEG 사진의 촬영일(EXIF) 읽기 — 가볍고 즉시. 없거나 읽을 수 없으면 null
 async function exifDate(file){
@@ -307,14 +325,15 @@ async function submitReq(){
   if(!dt)return toast('지출일을 입력하세요.',true);
   if(!fy)return toast(yr+'년 회계연도가 없습니다. 관리자에게 추가를 요청하세요.',true);
   if(!amt||amt<=0)return toast('금액을 입력하세요.',true);if(!desc)return toast('내용을 입력하세요.',true);
-  if(!ph||!pb||!pa)return toast('입금받을 예금주·은행·계좌번호를 입력하세요.',true);
+  const pm=document.querySelector('input[name=rpm]:checked')?.value==='card'?'card':'transfer';
+  if(pm==='transfer'&&(!ph||!pb||!pa))return toast('입금받을 예금주·은행·계좌번호를 입력하세요.',true);
   btn.disabled=true;btn.textContent='올리는 중…';
   try{
     const blob=await compress(f);const path=`${S.me.user_id}/${S.idem}.jpg`;
     const up=await sb.storage.from('receipts').upload(path,blob,{contentType:'image/jpeg',upsert:false});
     if(up.error&&!/exists|Duplicate/i.test(up.error.message))throw up.error;
-    await rpc('submit_expense',{p_year:yr,p_dept:+$('#rd').value,p_cat:+$('#rc').value,p_item:$('#ri').value?+$('#ri').value:null,p_sub_item:$('#rs').value?+$('#rs').value:null,p_amount:amt,p_description:desc,p_note:$('#rn').value.trim()||null,p_date:dt,p_receipt_path:path,p_payee_holder:ph,p_payee_bank:pb,p_payee_account:pa,p_idem:S.idem});
-    try{if($('#pr').checked)localStorage.setItem('sh_payee',JSON.stringify({h:ph,b:pb,a:pa}));else localStorage.removeItem('sh_payee')}catch(_){}
+    await rpc('submit_expense',{p_year:yr,p_dept:+$('#rd').value,p_cat:+$('#rc').value,p_item:$('#ri').value?+$('#ri').value:null,p_sub_item:$('#rs').value?+$('#rs').value:null,p_amount:amt,p_description:desc,p_note:$('#rn').value.trim()||null,p_date:dt,p_receipt_path:path,p_payee_holder:pm==='card'?null:ph,p_payee_bank:pm==='card'?null:pb,p_payee_account:pm==='card'?null:pa,p_idem:S.idem,p_pay_method:pm});
+    if(pm==='transfer')try{if($('#pr').checked)localStorage.setItem('sh_payee',JSON.stringify({h:ph,b:pb,a:pa}));else localStorage.removeItem('sh_payee')}catch(_){}
     S.idem=null;toast(yr===S.year?'신청되었습니다.':yr+'년 회계로 신청되었습니다.');await loadYear();renderTabs();S.tab='list';S.f.mine=true;renderTabs();render();
   }catch(e){if(e&&e.message&&!e.code)toast(e.message,true);btn.disabled=false;btn.textContent='신청'}
 }
@@ -327,13 +346,13 @@ function renderList(){
     a.push(`<button class="btn btn-ghost btn-sm" data-act="receipt" data-id="${e.id}">영수증</button>`);
     if(!e.deleted_at){
       if(e.status==='requested'&&canProcess(e))a.push(`<button class="btn btn-green btn-sm" data-act="approve" data-id="${e.id}">승인</button><button class="btn btn-danger btn-sm" data-act="reject" data-id="${e.id}">반려</button>`);
-      if((e.status==='approved'||e.status==='requested')&&canProcess(e)&&isMoney())a.push(`<button class="btn btn-gold btn-sm" data-tab="pay">입금관리</button>`);
+      if((e.status==='approved'||e.status==='requested')&&canProcess(e)&&isMoney())a.push(e.pay_method==='card'?`<button class="btn btn-gold btn-sm" data-act="cardok" data-id="${e.id}">결제확인</button>`:`<button class="btn btn-gold btn-sm" data-tab="pay">입금관리</button>`);
       if(e.status==='requested'&&mine)a.push(`<button class="btn btn-ghost btn-sm" data-act="cancel" data-id="${e.id}">취소</button>`);
       a.push(`<button class="btn btn-ghost btn-sm" data-act="print" data-id="${e.id}">인쇄</button>`);
       if(isAdmin())a.push(`<button class="btn btn-ghost btn-sm" data-act="edit" data-id="${e.id}">수정</button><button class="btn btn-ghost btn-sm" data-act="del" data-id="${e.id}">삭제</button>`);
     }else if(isAdmin())a.push(`<button class="btn btn-ghost btn-sm" data-act="restore" data-id="${e.id}">복구</button>`);
-    return `<tr><td>${e.expense_date}</td><td>${esc(dn(e.dept_id))}</td><td>${esc(cn(e.category_id))}${e.item_id?' / '+esc(inm(e.item_id)):''}${e.sub_item_id?' / '+esc(snm(e.sub_item_id)):''}</td><td>${esc(e.description)}${e.note?`<div class="note">${esc(e.note)}</div>`:''}${e.reject_reason?`<div class="note neg">반려: ${esc(e.reject_reason)}</div>`:''}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td class="ctr"><span class="st st-${e.status}">${ST[e.status]}</span></td><td style="white-space:nowrap">${a.join(' ')}</td></tr>`};
-  const th='<thead><tr><th>지출일</th><th>부서</th><th>항/목/적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th><th></th></tr></thead>';
+    return `<tr><td class="num">${e.voucher_no??''}</td><td>${e.expense_date}</td><td>${esc(dn(e.dept_id))}</td><td>${esc(cn(e.category_id))}${e.item_id?' / '+esc(inm(e.item_id)):''}${e.sub_item_id?' / '+esc(snm(e.sub_item_id)):''}</td><td>${esc(e.description)}${e.note?`<div class="note">${esc(e.note)}</div>`:''}${e.reject_reason?`<div class="note neg">반려: ${esc(e.reject_reason)}</div>`:''}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td class="ctr"><span class="st st-${e.status}">${e.pay_method==='card'&&e.status==='paid'?'결제완료':ST[e.status]}</span>${e.pay_method==='card'?'<div class="note">법인카드</div>':''}</td><td style="white-space:nowrap">${a.join(' ')}</td></tr>`};
+  const th='<thead><tr><th class="num">No.</th><th>지출일</th><th>부서</th><th>항/목/적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th><th></th></tr></thead>';
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>지출내역 (${rows.length}건 · ${won(rows.filter(e=>e.status!=='rejected').reduce((s,e)=>s+ +e.amount,0))}원)</h3>
   <div class="filters"><select id="fd"><option value="">전체 부서</option>${S.depts.map(d=>`<option value="${d.id}" ${f.dept==d.id?'selected':''}>${esc(d.name)}</option>`).join('')}</select>
   <select id="fs"><option value="">전체 상태</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${f.status===k?'selected':''}>${v}</option>`).join('')}</select>
@@ -349,6 +368,7 @@ async function act(a,id){
     if(a==='print')return printExpense(e);
     if(a==='edit')return editModal(e);
     if(a==='approve'){await rpc('approve_expense',{p_id:e.id});toast('승인했습니다.')}
+    if(a==='cardok'){if(!confirm(`[법인카드] ${e.description} ${won(e.amount)}원\n\n교회 법인카드 결제를 확인했나요? 확인하면 '결제완료'가 됩니다.\n(청년회 계좌 출금 기록은 만들지 않습니다)`))return;await rpc('confirm_card_expense',{p_id:e.id});toast('결제확인했습니다.')}
     if(a==='reject'){const r=prompt('반려 사유를 입력하세요.');if(!r)return;await rpc('reject_expense',{p_id:e.id,p_reason:r});toast('반려했습니다.')}
     if(a==='cancel'){if(!confirm('이 신청을 취소할까요?'))return;await rpc('cancel_expense',{p_id:e.id});toast('취소했습니다.')}
     if(a==='del'){if(!confirm('삭제(휴지통 이동)할까요?'))return;await rpc('admin_delete_expense',{p_id:e.id});toast('휴지통으로 이동했습니다.')}
@@ -867,7 +887,7 @@ const PCSS=`@page{size:A4 %O%;margin:%M%}*{box-sizing:border-box;-webkit-print-c
 .pg{font-size:10pt}.pg+.pg{page-break-before:always}.rtitle{text-align:center;font-size:16pt;font-weight:700;text-decoration:underline;letter-spacing:.08em;margin:2px 0 8px}
 .rhead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;font-size:9.5pt}.ap{border-collapse:collapse}.ap th,.ap td{border:1px solid #000;min-width:58px;text-align:center;padding:2px 5px;font-size:8.5pt}.ap th{background:#eee}.ap td{height:46px;vertical-align:bottom;font-size:8pt}
 table.rt{width:100%;border-collapse:collapse;table-layout:fixed}.rt th,.rt td{border:1px solid #000;padding:2px 4px;font-size:8.5pt;word-break:keep-all;overflow-wrap:anywhere}.rt th{background:#eeecea;text-align:center}.rnote{font-size:8pt;color:#333;margin-top:6px;line-height:1.6}
-.res th{background:#f0f0f0;width:80px}.res td,.res th{border:1px solid #000;padding:6px 8px;font-size:10.5pt}.res{width:100%;border-collapse:collapse;margin-bottom:12px}.rcpt{border:2px dashed #aaa;padding:8px;text-align:center}.rcpt img{max-width:100%;max-height:160mm;object-fit:contain}`;
+.res th{background:#f0f0f0;width:80px}.res td,.res th{border:1px solid #000;padding:6px 8px;font-size:10.5pt}.res{width:100%;border-collapse:collapse;margin-bottom:12px}.rcpt{border:2px dashed #aaa;padding:8px;text-align:center}.rcpt img{max-width:100%;max-height:150mm;object-fit:contain}`;
 async function printPages(pagesHtml,o){o=o||{};
   const land=!!o.land,mar='19.05mm 17.78mm';
   const css=PCSS.replace('%O%',land?'landscape':'portrait').replace('%M%',mar);
@@ -882,20 +902,30 @@ async function printPages(pagesHtml,o){o=o||{};
 
 /* ── 지출결의서 (유아부 서식) ── */
 async function receiptUrl(path){if(!path)return '';const {data}=await sb.storage.from('receipts').createSignedUrl(path,3600);return data?.signedUrl||''}
-function signHTML(doc,dept){const sl=slotsFor(doc,dept);return sl.length?`<table class="ap"><tr>${sl.map(s=>`<th>${esc(s.label)}</th>`).join('')}</tr><tr>${sl.map(s=>`<td>${s.sign_img?`<img src="${esc(s.sign_img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(s.signer||'')}</td>`).join('')}</tr></table>`:''}
-function resHTML(e,img){
-  const row=(k,v,extra)=>`<tr><th>${k}</th><td${extra||''}>${v}</td></tr>`;
-  return `<div class="pg"><div class="rhead" style="margin-bottom:14px"><div><div class="rtitle" style="text-align:left">비 용 지 출 결 의 서</div><div>소망교회 청년회 (${esc(dn(e.dept_id))})</div></div>${signHTML('expense',e.dept_id)}</div>
-  <table class="res">${row('일 자',esc(e.dt))}${row('항 / 목',esc(cn(e.category_id))+(e.item_id?' / '+esc(inm(e.item_id)):''))}${row('내 역',esc(e.summary))}${row('금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${row('비 고',esc(e.note||'-'))}</table>
-  <div class="rcpt" style="${img?'':'height:200mm;display:flex;align-items:center;justify-content:center;color:#999'}">${img?`<div style="font-size:9pt;color:#888;margin-bottom:4px">▼ 영수증</div><img src="${esc(img)}">`:'영수증 붙이는 곳'}</div>
+function signHTML(doc,dept,fill){const sl=slotsFor(doc,dept);return sl.length?`<table class="ap"><tr>${sl.map(s=>`<th>${esc(s.label)}</th>`).join('')}</tr><tr>${sl.map(s=>`<td>${s.sign_img?`<img src="${esc(s.sign_img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(s.signer||(fill&&fill[String(s.label).replace(/\s/g,'')])||'')}</td>`).join('')}</tr></table>`:''}
+// 계정 표기: [항] 목_적요 (지결 양식과 같은 형식)
+const acctLabel=(c,i,s)=>`[${cn(c)}]`+(i?' '+inm(i):'')+(s?'_'+snm(s):'');
+function resHTML(e,img,py){
+  const row=(k,v,extra)=>`<tr><th>${k}</th><td colspan="5"${extra||''}>${v}</td></tr>`;
+  const pay=e.pay_method==='card'?`<tr><th>결 제</th><td colspan="5">교회 법인카드 결제 (정산 없음)</td></tr>`
+    :`<tr><th>계좌번호</th><td>${esc(py?.account_no||'')}</td><th>은 행</th><td>${esc(py?.bank_name||'')}</td><th>예금주</th><td>${esc(py?.account_holder||'')}</td></tr>`;
+  return `<div class="pg"><div class="rhead" style="margin-bottom:14px"><div><div class="rtitle" style="text-align:left">비 용 지 출 결 의 서</div><div>소망교회 청년회 (${esc(dn(e.dept_id))})</div>${e.voucher_no?`<div style="margin-top:4px;font-weight:700">전표번호 : ${e.fiscal_year?e.fiscal_year+'-':''}${e.voucher_no}</div>`:''}</div>${signHTML('expense',e.dept_id,{'담당':e.requester?pn(e.requester):''})}</div>
+  <table class="res">${row('일 자',esc(e.dt))}${row('계 정',esc(acctLabel(e.category_id,e.item_id,e.sub_item_id)))}${row('내 용',esc(e.desc))}${row('금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${row('비 고',esc(e.note||'-'))}${pay}</table>
+  <div class="rcpt" style="${img?'':'height:190mm;display:flex;align-items:center;justify-content:center;color:#999'}">${img?`<div style="font-size:9pt;color:#888;margin-bottom:4px">▼ 영수증</div><img src="${esc(img)}">`:'영수증 붙이는 곳'}</div>
   <div class="rnote">주) 1. 비용집행시 영수증 1매당 사용 양식 2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다. 3. 개인카드사용, 개인용도로 사용은 엄하게 금지합니다.</div></div>`}
 async function printResolutions(list){
   if(!list.length)return toast('출력할 지출 내역이 없습니다.',true);
   toast(`지출결의서 ${list.length}건 준비 중…`);
+  const ids=list.filter(e=>e.id&&e.pay_method!=='card').map(e=>e.id),py={};
+  if(ids.length){try{const {data}=await sb.from('expense_payees').select('expense_id,bank_name,account_no,account_holder').in('expense_id',ids);(data||[]).forEach(p=>py[p.expense_id]=p)}catch(_){}}
   const urls=await Promise.all(list.map(e=>receiptUrl(e.receipt_path)));
-  printPages(list.map((e,i)=>resHTML(e,urls[i])).join(''),{res:true,title:'지출결의서'});
+  printPages(list.map((e,i)=>resHTML(e,urls[i],py[e.id])).join(''),{res:true,title:'지출결의서'});
 }
-function printExpense(e){printResolutions([{dt:e.expense_date,dept_id:e.dept_id,category_id:e.category_id,item_id:e.item_id,summary:(e.sub_item_id?snm(e.sub_item_id)+' · ':'')+e.description,amount:e.amount,note:e.note,receipt_path:e.receipt_path}])}
+const resOf=e=>({id:e.id,voucher_no:e.voucher_no,fiscal_year:e.fiscal_year,dt:e.expense_date,dept_id:e.dept_id,category_id:e.category_id,item_id:e.item_id,sub_item_id:e.sub_item_id,desc:e.description,amount:e.amount,note:e.note,receipt_path:e.receipt_path,requester:e.requested_by,pay_method:e.pay_method});
+const resOfRow=r=>{const e=S.expenses.find(x=>x.id===r.ref_id);if(e)return resOf(e);
+  const pre=r.sub_item_id?snm(r.sub_item_id)+' · ':'';const d=String(r.summary||'');
+  return {id:r.ref_id,dt:r.dt,dept_id:r.dept_id,category_id:r.category_id,item_id:r.item_id,sub_item_id:r.sub_item_id,desc:pre&&d.startsWith(pre)?d.slice(pre.length):d,amount:r.amount,note:r.note,receipt_path:r.receipt_path,requester:r.requester}};
+function printExpense(e){printResolutions([resOf(e)])}
 
 /* ── 수입 계정항목 설정 ── */
 function setInc(){
@@ -1068,8 +1098,8 @@ async function renderDaily(){
   $('#dgo').onclick=()=>{S.df=$('#df').value;S.dt=$('#dt').value;renderDaily()};
   const all=$('#dchkall');if(all)all.onchange=()=>document.querySelectorAll('.dchk').forEach(c=>c.checked=all.checked);
   const sel=ids=>S._dr.filter(r=>r.kind==='expense'&&ids.has(r.ref_id));
-  $('#dsel').onclick=()=>printResolutions(sel(new Set([...document.querySelectorAll('.dchk:checked')].map(c=>+c.dataset.id))).sort((a,b)=>a.dt<b.dt?-1:1));
-  $('#dper').onclick=()=>printResolutions(S._dr.filter(r=>r.kind==='expense'&&(!from||r.dt>=from)&&(!to||r.dt<=to)).sort((a,b)=>a.dt<b.dt?-1:1));
+  $('#dsel').onclick=()=>printResolutions(sel(new Set([...document.querySelectorAll('.dchk:checked')].map(c=>+c.dataset.id))).sort((a,b)=>a.dt<b.dt?-1:1).map(resOfRow));
+  $('#dper').onclick=()=>printResolutions(S._dr.filter(r=>r.kind==='expense'&&(!from||r.dt>=from)&&(!to||r.dt<=to)).sort((a,b)=>a.dt<b.dt?-1:1).map(resOfRow));
   $('#dpr').onclick=()=>printPages(mHTML(dailyModel(rows,from,to)),{land:false,fit:false,title:`${y} 일일수지내역`});
   $('#dxl').onclick=()=>mXLSX(dailyModel(rows,from,to),`${y}_${deptLabel()}_일일수지내역`);
 }
