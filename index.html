@@ -196,22 +196,83 @@ async function reload(){await loadStatic();await loadYear();renderTabs();render(
 function pendingCount(){return S.expenses.filter(e=>!e.deleted_at&&e.status==='requested'&&canProcess(e)).length+(isAdmin()?S.borrows.filter(b=>b.status==='requested').length:0)}
 
 
-/* ───── 현황 ───── */
-function renderDash(){
-  const catsFor=d=>catsOfG(d.id).filter(c=>c.active||S.summary.some(r=>r.dept_id===d.id&&r.category_id===c.id&&(r.budget||r.used||r.pending)));
-  let h='';
-  const tot={b:0,u:0,p:0};
-  viewDepts().forEach(d=>{
-    let rows='',sb_=0,su=0,sp=0;
-    catsFor(d).forEach(c=>{const r=S.summary.find(x=>x.dept_id===d.id&&x.category_id===c.id)||{budget:0,used:0,pending:0};
-      const rem=r.budget-r.used-r.pending;sb_+=+r.budget;su+=+r.used;sp+=+r.pending;
-      rows+=`<tr><td>${esc(c.name)}</td><td class="num">${won(r.budget)}</td><td class="num">${won(r.used)}</td><td class="num">${won(r.pending)}</td><td class="num ${rem<0?'neg':''}">${won(rem)}</td></tr>`});
-    tot.b+=sb_;tot.u+=su;tot.p+=sp;
-    h+=`<div class="card"><div class="card-head"><h3>${esc(dName(d.id))}</h3></div><div class="tblwrap"><table class="tbl"><thead><tr><th>항</th><th class="num">예산</th><th class="num">사용(승인·입금)</th><th class="num">대기(신청)</th><th class="num">잔액</th></tr></thead><tbody>${rows}<tr class="sum"><td>합계</td><td class="num">${won(sb_)}</td><td class="num">${won(su)}</td><td class="num">${won(sp)}</td><td class="num ${sb_-su-sp<0?'neg':''}">${won(sb_-su-sp)}</td></tr></tbody></table></div></div>`;
-  });
-  $('#main').innerHTML=`<div class="card"><div class="card-body"><b>${S.year}년 전체</b> · 예산 ${won(tot.b)}원 · 사용 ${won(tot.u)}원 · 대기 ${won(tot.p)}원 · 잔액 <span class="${tot.b-tot.u-tot.p<0?'neg':''}">${won(tot.b-tot.u-tot.p)}원</span><p class="note">모든 부서의 예산·사용·잔액을 누구나 볼 수 있습니다. 잔액 = 예산 − 사용 − 대기. 차용 승인 내역은 예산에 반영되어 있습니다.</p></div></div>${h}`;
+/* ───── 현황: 기준별 보기 (지출(항) · 항-목 · 행사 · 적요 · 수입) ───── */
+const DV=[['cat','지출별 (항)'],['item','항-목별'],['ev','행사별'],['acct','적요별'],['inc','수입별']];
+async function renderDash(){
+  const mo=isMoney();if(!S.dv||(S.dv==='inc'&&!mo))S.dv='cat';
+  const v=S.dv,a=S.dmf||1,b=S.dmt||12,y=S.year;
+  const inM=d=>{const m=+String(d||'').slice(5,7);return m>=a&&m<=b};
+  const E=(S.expenses||[]).filter(e=>!e.deleted_at&&e.status!=='rejected'&&inM(e.expense_date));
+  const done=e=>e.status==='approved'||e.status==='paid';
+  // 수입은 회계·관리자만 (승인된 수입 = report_rows). 1분 동안 다시 부르지 않음
+  let I=[];
+  if(mo&&v!=='cat'&&v!=='item'){
+    if(!S._dinc||S._dinc.y!==y||Date.now()-S._dinc.t>60000){$('#main').innerHTML='<div class="card"><div class="card-body empty">불러오는 중…</div></div>';
+      let r=[];try{r=await rpc('report_rows',{p_year:y})}catch(_){}S._dinc={y,t:Date.now(),rows:(r||[]).filter(x=>x.kind==='income')}}
+    I=S._dinc.rows.filter(r=>inM(r.dt))}
+  const sumU=L=>sum(L.filter(done),'amount'),sumW=L=>sum(L.filter(e=>e.status==='requested'),'amount');
+  const lines=(S.lines||[]).filter(l=>l.kind==='expense');
+  const acNm2=e=>acNm(e.acct_id)||(e.sub_item_id?snm(e.sub_item_id)+' (예전 적요)':'(적요 없음)');
+  const G=[];const add=(k,label,o)=>{G.push(Object.assign({k,label},o));return G[G.length-1]};
+  let cols,note='';
+  if(v==='cat'){
+    cols=['항','예산(연간)','사용(승인·지급)','대기(신청)','잔액'];
+    const cs=S.cats.filter(c=>c.active||E.some(e=>e.category_id===c.id));
+    cs.forEach(c=>{const r=S.summary.find(x=>x.category_id===c.id&&memb(MD()).includes(x.dept_id))||{budget:0},L=E.filter(e=>e.category_id===c.id);
+      add('c'+c.id,c.name,{vals:[+r.budget,sumU(L),sumW(L),+r.budget-sumU(L)-sumW(L)],list:L})});
+    note='예산은 연간 예산(차용 반영)입니다. 사용·대기는 선택한 기간 기준입니다.';
+  }else if(v==='item'){
+    cols=['항 › 목','예산(예산 수립)','사용(승인·지급)','대기(신청)','잔액'];
+    S.cats.filter(c=>c.active||E.some(e=>e.category_id===c.id)).forEach(c=>{
+      const Lc=E.filter(e=>e.category_id===c.id),bc=sum(lines.filter(l=>l.category_id===c.id),'amt_d');
+      add('c'+c.id,c.name,{head:1,vals:[bc,sumU(Lc),sumW(Lc),bc-sumU(Lc)-sumW(Lc)],list:Lc});
+      const its=S.items.filter(i=>i.category_id===c.id&&(i.active||Lc.some(e=>e.item_id===i.id)));
+      its.forEach(i=>{const L=Lc.filter(e=>e.item_id===i.id),bi=sum(lines.filter(l=>l.category_id===c.id&&l.item_id===i.id),'amt_d');
+        add('i'+i.id,'└ '+i.name,{vals:[bi,sumU(L),sumW(L),bi-sumU(L)-sumW(L)],list:L})});
+      const L0=Lc.filter(e=>!e.item_id);if(L0.length)add('i0c'+c.id,'└ (목 없음)',{vals:['',sumU(L0),sumW(L0),''],list:L0})});
+    note='예산은 [예산 수립]의 예산액(목 단위)입니다. 차용은 항 단위라 여기에는 반영되지 않습니다.';
+  }else if(v==='ev'){
+    cols=['행사 (항 › 목)','계획 예산','지출(승인·지급)','대기(신청)'].concat(mo?['행사 수입','순비용(지출−수입)']:[]);
+    (S.events||[]).forEach(ev=>{const L=E.filter(e=>e.event_id===ev.id),inc=sum(I.filter(r=>r.event_id===ev.id),'amount');
+      add('e'+ev.id,`${ev.name} <span class="note">${esc(acctLabel(ev.category_id,ev.item_id))}${ev.status==='closed'?' · 마감':''}</span>`,{raw:1,vals:[+ev.plan_amount||'',sumU(L),sumW(L)].concat(mo?[inc,sumU(L)-inc]:[]),list:L,inc:I.filter(r=>r.event_id===ev.id)})});
+    const L0=E.filter(e=>!e.event_id);add('e0','(행사 아님)',{vals:['',sumU(L0),sumW(L0)].concat(mo?['','']:[]),list:L0});
+  }else if(v==='acct'){
+    cols=['지출 적요','사용(승인·지급)','대기(신청)','비율'];
+    const tot=sumU(E)||1,m=new Map();E.forEach(e=>{const k=e.acct_id?'a'+e.acct_id:e.sub_item_id?'s'+e.sub_item_id:'x';if(!m.has(k))m.set(k,{label:acNm2(e),L:[]});m.get(k).L.push(e)});
+    const order=k=>{const x=(S.sacc||[]).find(s=>'a'+s.id===k);return x?x.sort_order:1e6};
+    [...m.entries()].sort((p,q)=>order(p[0])-order(q[0])).forEach(([k,o])=>add(k,o.label,{vals:[sumU(o.L),sumW(o.L),Math.round(sumU(o.L)/tot*1000)/10+'%'],list:o.L}));
+    note='항·목·행사와 관계없이 적요(실제 계정)별로 합친 금액입니다.';
+    if(mo){const mi=new Map();I.forEach(r=>{const k=r.acct_id?'ia'+r.acct_id:'ix';if(!mi.has(k))mi.set(k,{label:'[수입] '+(acNm(r.acct_id)||'(적요 없음)'),L:[]});mi.get(k).L.push(r)});
+      [...mi.entries()].forEach(([k,o])=>add(k,o.label,{sub2:1,vals:[sum(o.L,'amount'),'',''],inc:o.L}))}
+  }else{
+    cols=['수입 항 › 목','금액','건수'];
+    const m=new Map();I.forEach(r=>{const k=r.inc_cat_id+'|'+(r.inc_item_id||0);if(!m.has(k))m.set(k,{label:incCn(r.inc_cat_id)+(r.inc_item_id?' › '+incIn(r.inc_item_id):''),L:[]});m.get(k).L.push(r)});
+    [...m.entries()].forEach(([k,o])=>add('n'+k,o.label,{vals:[sum(o.L,'amount'),o.L.length],inc:o.L}));
+    const ma=new Map();I.forEach(r=>{const k=r.acct_id||0;if(!ma.has(k))ma.set(k,{label:'적요: '+(acNm(r.acct_id)||'(없음)'),L:[]});ma.get(k).L.push(r)});
+    if(I.some(r=>r.acct_id))[...ma.entries()].forEach(([k,o])=>add('na'+k,o.label,{sub2:1,vals:[sum(o.L,'amount'),o.L.length],inc:o.L}));
+    note='승인된 수입(수입 등록·청구 입금) 기준입니다. 이월금 포함.';
+  }
+  const tot=cols.slice(1).map((_,i)=>{const xs=G.filter(g=>!g.head&&!g.sub2).map(g=>g.vals[i]);return xs.every(x=>typeof x==='number'||x==='')?sum(xs.map(x=>({x:+x||0})),'x'):''});
+  const cell=(x,i)=>`<td class="num ${typeof x==='number'&&x<0?'neg':''}">${typeof x==='number'?won(x):esc(x)}</td>`;
+  const opt=n=>Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1===n?'selected':''}>${i+1}월</option>`).join('');
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${y}년 현황</h3><div class="filters"><label>기간 <select id="dmf">${opt(a)}</select> ~ <select id="dmt">${opt(b)}</select></label></div></div>
+  <div class="card-body"><div style="display:flex;gap:6px;flex-wrap:wrap">${DV.filter(d=>d[0]!=='inc'||mo).map(d=>`<button class="btn btn-sm ${d[0]===v?'btn-primary':'btn-ghost'}" data-dv="${d[0]}">${d[1]}</button>`).join('')}</div>
+  <p class="note" style="margin-top:8px">${note?note+' ':''}줄을 누르면 아래에 해당 내역이 나옵니다.${v==='inc'||(mo&&v!=='cat'&&v!=='item')?'':''}</p></div>
+  <div class="tblwrap"><table class="tbl" id="dtbl"><thead><tr>${cols.map((c,i)=>`<th${i?' class="num"':''}>${c}</th>`).join('')}</tr></thead><tbody>
+  ${G.map(g=>`<tr data-dk="${g.k}" style="cursor:pointer${g.head?';background:var(--paper);font-weight:800':''}${S.dsel===g.k?';outline:2px solid var(--blue)':''}"><td>${g.raw?'<b>'+g.label+'</b>':esc(g.label)}</td>${g.vals.map(cell).join('')}</tr>`).join('')||`<tr><td colspan="${cols.length}" class="empty">내역이 없습니다.</td></tr>`}
+  ${G.length&&v!=='item'?`<tr class="sum"><td>합계</td>${tot.map(x=>x===''?'<td></td>':cell(x)).join('')}</tr>`:''}</tbody></table></div></div><div id="ddet"></div>`;
+  document.querySelectorAll('[data-dv]').forEach(x=>x.onclick=()=>{S.dv=x.dataset.dv;S.dsel=null;renderDash()});
+  const per=()=>{let f=+$('#dmf').value,t=+$('#dmt').value;if(f>t)t=f;S.dmf=f;S.dmt=t;renderDash()};$('#dmf').onchange=per;$('#dmt').onchange=per;
+  const det=k=>{const g=G.find(x=>x.k===k);if(!g)return;S.dsel=k;document.querySelectorAll('#dtbl tr[data-dk]').forEach(r=>r.style.outline=r.dataset.dk===k?'2px solid var(--blue)':'');
+    const L=(g.list||[]).slice().sort((p,q)=>p.expense_date<q.expense_date?-1:1),R=(g.inc||[]).slice().sort((p,q)=>p.dt<q.dt?-1:1);
+    $('#ddet').innerHTML=`<div class="card"><div class="card-head"><h3>${g.raw?g.label:esc(g.label)} — 내역</h3></div><div class="tblwrap">
+    ${L.length?`<table class="tbl"><thead><tr><th class="num">No.</th><th>지출일</th><th>항 / 목 / 적요 · 행사</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th></tr></thead><tbody>${L.map(e=>`<tr><td class="num">${e.voucher_no??''}</td><td>${e.expense_date}</td><td style="font-size:12px">${esc(acctLabel(e.category_id,e.item_id,e.sub_item_id,e.acct_id))}${e.event_id?' · 🎪 '+esc(evNm(e.event_id)):''}</td><td>${esc(e.description)}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td><span class="st st-${e.status}">${e.pay_method==='card'&&e.status==='paid'?'결제완료':ST[e.status]}</span></td></tr>`).join('')}</tbody></table>`:''}
+    ${R.length?`<table class="tbl"><thead><tr><th>입금일</th><th>수입 항 / 목</th><th>내용</th><th class="num">금액</th></tr></thead><tbody>${R.map(r=>`<tr><td>${r.dt}</td><td style="font-size:12px">${esc(incCn(r.inc_cat_id)+(r.inc_item_id?' / '+incIn(r.inc_item_id):''))}${r.event_id?' · 🎪 '+esc(evNm(r.event_id)):''}</td><td>${esc(r.summary)}</td><td class="num">${won(r.amount)}</td></tr>`).join('')}</tbody></table>`:''}
+    ${!L.length&&!R.length?'<div class="empty">내역이 없습니다.</div>':''}</div></div>`;
+    $('#ddet').scrollIntoView({behavior:'smooth',block:'nearest'})};
+  $('#dtbl').onclick=ev=>{const t=ev.target.closest('[data-dk]');if(t)det(t.dataset.dk)};
+  if(S.dsel&&G.some(g=>g.k===S.dsel))det(S.dsel);
 }
-
 /* ───── 지출신청 ───── */
 const snm=id=>(S.subs||[]).find(x=>x.id===id)?.name||'', subsFor=it=>(S.subs||[]).filter(x=>x.active&&x.item_id===+it);
 /* ───── 0010: 부서 선택 없음 · 항별 담당 회계 · 공통 적요 · 행사 꼬리표 ───── */
@@ -271,7 +332,7 @@ function renderReq(){
   ${step(4,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="(예시) 행사이름-계정이름 / 소나축-간식비"><div id="mapHint" class="hint"></div></div>
   ${step(5,'계정 (내용을 쓰면 행사·항·목·적요가 자동으로 골라집니다. 직접 바꿀 수 있어요)')}
   <div id="rap">${apHTML('r')}</div>
-  <div class="field"><label>비고</label><input id="rn" maxlength="200"></div>
+  <div class="field"><label>비고</label><input id="rn" maxlength="200" placeholder="자세한 내용은 여기에 작성"></div>
   <div id="payBox">${step(6,'전도금 받을 계좌')}<div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
   <div class="field" id="ppickW" style="display:none"><label>최근 사용한 계좌</label><select id="ppick"></select></div>
   <div class="grid3"><div class="field"><label>예금주 <span class="req">*</span></label><input id="ph" maxlength="30" autocomplete="off"></div>
@@ -283,7 +344,7 @@ function renderReq(){
   <button class="btn btn-primary" id="reqBtn">신청</button></div></div>`;
   let manual=false;
   const yr=()=>+String($('#rdt').value||'').slice(0,4)||0;
-  const ap=S._ap=apWire($('#rap'),'r',{},()=>yr()||S.year,()=>{manual=true;$('#mapHint').textContent='';bal()});
+  const ap=S._ap=apWire($('#rap'),'r',{},()=>yr()||S.year,()=>{if($('#rdesc').value.trim())manual=true;$('#mapHint').textContent='';bal()});
   const yrInfo=()=>{const y=yr(),fy=S.years.find(v=>v.year===y),h=$('#yrHint');
     if(!y){h.innerHTML='';return}
     if(!fy)h.innerHTML=`<span class="neg">⚠ ${y}년 회계연도가 없습니다. 관리자에게 추가를 요청하세요.</span>`;
