@@ -524,7 +524,7 @@ function editModal(e){
       m.remove();toast('수정했습니다.');await loadYear();renderTabs();render()}catch(_){}};
 }
 function slotsBy(doc,o){return S.slots.filter(s=>s.doc_type===doc&&(s.owner_user_id||null)===(o||null)).sort((a,b)=>a.sort_order-b.sort_order)}
-const apIsDam=l=>String(l||'').replace(/\s/g,'')==='담당';
+const apIsDam=l=>/^담당/.test(String(l||'').replace(/\s/g,'')); // 담당, 담당회계 등
 // 회계별 담당 서명: 그 회계 전용 결재란(지출결의서)의 '담당' 칸 서명 이미지
 const apDamSign=u=>u?(slotsBy('expense',u).find(s=>apIsDam(s.label))?.sign_img||''):'';
 /* 결재란: 모든 문서 공통 1줄(기본 지출결의서 줄). 담당 칸 = who(승인한 회계). who를 안 주면 인쇄하는 회계 본인 */
@@ -1160,7 +1160,7 @@ const PCSS=`@page{size:A4 %O%;margin:%M%}*{box-sizing:border-box;-webkit-print-c
 .pg{font-size:10pt}.pg+.pg{page-break-before:always}.rtitle{text-align:center;font-size:16pt;font-weight:700;text-decoration:underline;letter-spacing:.08em;margin:2px 0 8px}
 .rhead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;font-size:9.5pt}.ap{border-collapse:collapse}.ap th,.ap td{border:1px solid #000;min-width:58px;text-align:center;padding:2px 5px;font-size:8.5pt}.ap th{background:#eee}.ap td{height:46px;vertical-align:bottom;font-size:8pt}
 table.rt{width:100%;border-collapse:collapse;table-layout:fixed}.rt th,.rt td{border:1px solid #000;padding:2px 4px;font-size:8.5pt;word-break:keep-all;overflow-wrap:anywhere}.rt th{background:#eeecea;text-align:center}.rnote{font-size:8pt;color:#333;margin-top:6px;line-height:1.6}
-.res th{background:#f0f0f0;width:80px}.res td,.res th{border:1px solid #000;padding:6px 8px;font-size:10.5pt}.res{width:100%;border-collapse:collapse;margin-bottom:12px}.rcpt{border:2px dashed #aaa;padding:8px;text-align:center}.rcpt img{max-width:100%;max-height:150mm;object-fit:contain}`;
+.res th{background:#f0f0f0;width:80px;white-space:nowrap}.res td,.res th{border:1px solid #000;padding:6px 8px;font-size:10.5pt}.res{width:100%;border-collapse:collapse;margin-bottom:12px}.rcpt{border:2px dashed #aaa;padding:8px;text-align:center}.rcpt img{max-width:100%;max-height:150mm;object-fit:contain}`;
 async function printPages(pagesHtml,o){o=o||{};
   const land=!!o.land,mar='19.05mm 17.78mm';
   const css=PCSS.replace('%O%',land?'landscape':'portrait').replace('%M%',mar);
@@ -1182,8 +1182,8 @@ function resHTML(e,img,py){
   const row=(k,v,extra)=>`<tr><th>${k}</th><td colspan="5"${extra||''}>${v}</td></tr>`;
   const pay=e.payText?`<tr><th>결 제</th><td colspan="5">${esc(e.payText)}</td></tr>`:e.pay_method==='card'?`<tr><th>결 제</th><td colspan="5">청년부 체크카드 결제 (총괄계좌 출금)</td></tr>`
     :`<tr><th>계좌번호</th><td>${esc(py?.account_no||'')}</td><th>은 행</th><td>${esc(py?.bank_name||'')}</td><th>예금주</th><td>${esc(py?.account_holder||'')}</td></tr>`;
-  return `<div class="pg"><div class="rhead" style="margin-bottom:14px"><div><div class="rtitle" style="text-align:left">비 용 지 출 결 의 서</div><div>소망교회 청년회</div>${e.voucher_no?`<div style="margin-top:4px;font-weight:700">전표번호 : ${e.fiscal_year?e.fiscal_year+'-':''}${e.voucher_no}</div>`:''}</div>${signHTML('expense',e.dept_id,{who:e.approved_by||e.paid_by||null})}</div>
-  <table class="res">${row('일 자',esc(e.dt))}${row('계 정',esc(acctLabel(e.category_id,e.item_id,e.sub_item_id,e.acct_id))+(e.event_id?' &nbsp;·&nbsp; 행사: '+esc(evNm(e.event_id)):''))}${row('내 용',esc(e.desc))}${row('금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${row('비 고',esc(e.note||'-'))}${pay}</table>
+  return `<div class="pg"><div class="rhead" style="margin-bottom:14px"><div><div class="rtitle" style="text-align:left">지 출 결 의 서</div><div>소망교회 청년회 HESSED</div>${e.voucher_no?`<div style="margin-top:4px;font-weight:700">전표번호 : ${e.fiscal_year?e.fiscal_year+'-':''}${e.voucher_no}</div>`:''}</div>${signHTML('expense',e.dept_id,{who:e.approved_by||e.paid_by||null})}</div>
+  <table class="res">${row('일 자',esc(e.dt)+(e.dt?' ('+'일월화수목금토'[new Date(e.dt+'T00:00:00').getDay()]+')':''))}<tr><th>항</th><td>${esc(cn(e.category_id))}</td><th>목</th><td>${esc(e.item_id?inm(e.item_id):'')}${e.event_id?`<div style="font-size:9pt;color:#555">행사: ${esc(evNm(e.event_id))}</div>`:''}</td><th>계정(적요)</th><td>${esc(e.acct_id?acNm(e.acct_id):e.sub_item_id?snm(e.sub_item_id):'')}</td></tr><tr><th>내 용</th><td colspan="3">${esc(e.desc)}</td><th>비 고</th><td>${esc(e.note||'')}</td></tr>${row('금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${pay}</table>
   <div class="rcpt" style="${img?'':'height:190mm;display:flex;align-items:center;justify-content:center;color:#999'}">${img?`<div style="font-size:9pt;color:#888;margin-bottom:4px">▼ 영수증</div><img src="${esc(img)}">`:'영수증 붙이는 곳'}</div>
   <div class="rnote">주) 1. 비용집행시 영수증 1매당 사용 양식 2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다. 3. 개인카드사용, 개인용도로 사용은 엄하게 금지합니다.</div></div>`}
 async function printResolutions(list){
