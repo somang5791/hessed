@@ -95,6 +95,9 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
 .todo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
 .todo-t{background:#fff;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;font:inherit;color:inherit}
 .todo-t b{font-size:22px}.todo-t.on{border:2px solid var(--blue)}.todo-t.warn{border:2px solid var(--red)}.todo-t.warn b{color:var(--red)}
+.acbar{display:flex;flex-wrap:wrap;gap:8px;padding:10px 14px;border-bottom:1px solid var(--rule)}
+.acchip{background:#fff;border:1px solid var(--rule);border-radius:8px;padding:6px 10px;font:inherit;font-size:12px;cursor:pointer;display:flex;flex-direction:column;align-items:flex-start;gap:2px;color:inherit}
+.acchip b{font-size:13px}.acchip.on{border:2px solid var(--blue);background:var(--blue-lt)}
 </style>
 </head>
 <body>
@@ -195,7 +198,7 @@ async function loadYear(){
     sb.from('budgets').select('*').eq('fiscal_year',y),
     sb.from('budget_adjustments').select('*').eq('fiscal_year',y),
     sb.from('budget_lines').select('*').eq('fiscal_year',y)]);
-  S.summary=sm.data||[];S.expenses=ex.data||[];S.budgets=bu.data||[];S.adjust=ad.data||[];S.lines=bl.data||[];
+  S.myPay=null;S.summary=sm.data||[];S.expenses=ex.data||[];S.budgets=bu.data||[];S.adjust=ad.data||[];S.lines=bl.data||[];
   {const ev=await sb.from('events').select('*').in('fiscal_year',[y-1,y,y+1]).order('id');S.evAll=ev.data||[];S.events=S.evAll.filter(e=>e.fiscal_year===y);const ids=S.events.map(e=>e.id);
    if(ids.length){const [c,t]=await Promise.all([sb.from('event_cats').select('*').in('event_id',ids),sb.from('event_tx').select('*').in('event_id',ids)]);S.evCats=c.data||[];S.evTx=t.data||[]}else{S.evCats=[];S.evTx=[]}}
   S.pay=[];S.funds=[];S.tx=[];if(isMoney()){const [pp,f,t]=await Promise.all([sb.rpc('pending_payouts'),sb.from('fund_requests').select('*').eq('fiscal_year',y).order('id',{ascending:false}),sb.from('account_tx').select('*').eq('fiscal_year',y).order('tx_date',{ascending:false}).order('id',{ascending:false})]);S.pay=pp.data||[];S.funds=f.data||[];S.tx=t.data||[]}
@@ -474,8 +477,19 @@ async function submitReq(){
 }
 
 /* ───── 지출내역 ───── */
+// 지출자: 내 신청이 어느 계좌로 입금되는지 (expense_payees, 본인 것만 읽힘) — 한 번 불러와 둠
+async function loadMyPay(){const {data}=await sb.from('expense_payees').select('expense_id,bank_name,account_no,account_holder').eq('user_id',S.me.user_id);
+  S.myPay=new Map((data||[]).map(p=>[p.expense_id,{k:p.account_holder+'|'+p.bank_name+'|'+String(p.account_no).replace(/-/g,''),l:`${p.bank_name} ${p.account_no} (${p.account_holder})`}]))}
+const payOf=e=>e.pay_method==='card'?{k:'card',l:'체크카드 (받을 돈 없음)'}:(S.myPay&&S.myPay.get(e.id))||{k:'?',l:'계좌 정보 없음'};
 function renderList(){
-  const f=S.f;let rows=S.expenses.filter(e=>(!f.dept||e.event_id===+f.dept)&&(!f.status||e.status===f.status)&&(!(f.mine||!isMoney())||e.requested_by===S.me.user_id));
+  if(!isMoney()&&!S.myPay){S.myPay=new Map();loadMyPay().then(()=>{if(S.tab==='list')renderList()})}
+  const f=S.f;if(isMoney())f.acct='';
+  const base=S.expenses.filter(e=>(!f.dept||e.event_id===+f.dept)&&(!f.status||e.status===f.status)&&(!(f.mine||!isMoney())||e.requested_by===S.me.user_id));
+  let rows=base.filter(e=>!f.acct||payOf(e).k===f.acct);
+  const acctBar=()=>{if(isMoney())return '';const G=new Map();for(const e of base){if(e.deleted_at||e.status==='rejected')continue;const p=payOf(e);if(!G.has(p.k))G.set(p.k,{l:p.l,n:0,t:0});const g=G.get(p.k);g.n++;g.t+= +e.amount}
+    if(!G.size)return '';const all=[...G.values()].reduce((s,g)=>({n:s.n+g.n,t:s.t+g.t}),{n:0,t:0});
+    const chip=(k,l,n,t)=>`<button type="button" class="acchip ${(f.acct||'')===k?'on':''}" data-acchip="${esc(k)}">${k==='card'?'💳':k===''?'📋':'🏦'} ${esc(l)}<b>${n}건 · ${won(t)}원</b></button>`;
+    return `<div class="acbar">${chip('','전체',all.n,all.t)}${[...G.entries()].map(([k,g])=>chip(k,g.l,g.n,g.t)).join('')}</div>`};
   const trash=rows.filter(e=>e.deleted_at);rows=rows.filter(e=>!e.deleted_at);
   const tr=e=>{const mine=e.requested_by===S.me.user_id,a=[];
     if(e.receipt_path)a.push(`<button class="btn btn-ghost btn-sm" data-act="receipt" data-id="${e.id}">영수증</button>`);
@@ -491,9 +505,9 @@ function renderList(){
   <div class="filters"><select id="fd" ${isMoney()?'':'style="display:none"'}><option value="">전체 (행사 무관)</option>${(S.events||[]).map(v=>`<option value="${v.id}" ${f.dept==v.id?'selected':''}>🎪 ${esc(v.name)}</option>`).join('')}</select>
   <select id="fs"><option value="">전체 상태</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${f.status===k?'selected':''}>${v}</option>`).join('')}</select>
   ${isMoney()?`<label><input type="checkbox" id="fm" ${f.mine?'checked':''}> 내 신청만</label>`:''}</div></div>
-  <div class="tblwrap">${rows.length?`<table class="tbl">${th}<tbody>${rows.map(tr).join('')}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>
+  ${acctBar()}<div class="tblwrap">${rows.length?`<table class="tbl">${th}<tbody>${rows.map(tr).join('')}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>
   ${isAdmin()&&trash.length?`<div class="card"><div class="card-head"><h3>🗑 휴지통 (${trash.length})</h3></div><div class="tblwrap"><table class="tbl">${th}<tbody>${trash.map(tr).join('')}</tbody></table></div></div>`:''}`;
-  $('#fd').onchange=e=>{S.f.dept=e.target.value;renderList()};$('#fs').onchange=e=>{S.f.status=e.target.value;renderList()};if($('#fm'))$('#fm').onchange=e=>{S.f.mine=e.target.checked;renderList()};
+  $('#fd').onchange=e=>{S.f.dept=e.target.value;renderList()};document.querySelectorAll('[data-acchip]').forEach(b=>b.onclick=()=>{S.f.acct=b.dataset.acchip;renderList()});$('#fs').onchange=e=>{S.f.status=e.target.value;renderList()};if($('#fm'))$('#fm').onchange=e=>{S.f.mine=e.target.checked;renderList()};
 }
 async function act(a,id){
   const e=S.expenses.find(x=>x.id===+id);
@@ -909,23 +923,6 @@ async function evAct(a,id){
   }catch(_){}
 }
 
-/* ───── 내 계좌 내역 (지출자): 내 계좌로 받은 · 받을 전도금 ───── */
-async function renderMyPay(){
-  $('#main').innerHTML='<div class="card"><div class="card-body empty">불러오는 중…</div></div>';
-  const {data}=await sb.from('expense_payees').select('expense_id,bank_name,account_no,account_holder').eq('user_id',S.me.user_id);
-  if(S.tab!=='mypay')return;
-  const P=new Map((data||[]).map(p=>[p.expense_id,p]));
-  const E=(S.expenses||[]).filter(e=>!e.deleted_at&&e.requested_by===S.me.user_id&&e.pay_method!=='card'&&e.status!=='rejected').sort((a,b)=>a.expense_date<b.expense_date?1:-1);
-  const G=new Map();for(const e of E){const p=P.get(e.id),k=p?p.account_holder+'|'+p.bank_name+'|'+String(p.account_no).replace(/-/g,''):'?';if(!G.has(k))G.set(k,{p,rs:[]});G.get(k).rs.push(e)}
-  const paid=e=>e.status==='paid',tot=(rs,f)=>rs.filter(f).reduce((s,e)=>s+ +e.amount,0);
-  const cards=[...G.values()].map(({p,rs})=>`<div class="card"><div class="card-head"><h3>🏦 ${p?`${esc(p.bank_name)} ${esc(p.account_no)} <span class="note">(${esc(p.account_holder)})</span>`:'계좌 정보 없음'}</h3>
-    <div class="note">받은 금액 <b>${won(tot(rs,paid))}원</b> · 받을 금액 <b class="${tot(rs,e=>!paid(e))?'neg':''}">${won(tot(rs,e=>!paid(e)))}원</b></div></div>
-    <div class="tblwrap"><table class="tbl"><thead><tr><th>지출일</th><th>내용</th><th class="num">금액</th><th>상태</th><th>입금일</th></tr></thead><tbody>
-    ${rs.map(e=>`<tr><td>${e.expense_date}</td><td>${esc(e.description)}</td><td class="num">${won(e.amount)}</td><td><span class="st st-${e.status}">${paid(e)?'입금완료':'입금 대기'}</span></td><td>${e.paid_at?String(e.paid_at).slice(0,10):''}</td></tr>`).join('')}</tbody></table></div></div>`).join('');
-  $('#main').innerHTML=`<div class="card"><div class="card-body" style="padding:10px 14px"><b>${S.year}년</b> 내가 신청한 개인 결제 건이 어느 계좌로 얼마나 입금됐는지 보여 줍니다. <span class="note">체크카드 결제 건은 받을 돈이 없어 나오지 않아요. 다른 연도는 위쪽 회계연도를 바꿔 보세요.</span></div></div>
-  ${cards||'<div class="card"><div class="card-body empty">아직 전도금을 받을 신청이 없습니다.</div></div>'}`;
-}
-
 /* ───── 백업 · 복구 (관리자) ───── */
 const dlBlob=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000)};
 const bkStamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`};
@@ -1019,7 +1016,7 @@ function renderTodo(){
 const all=()=>true,money=()=>isMoney(),adm=()=>isAdmin();
 const MENU=[
  {k:'m_todo',l:'할 일',vis:money,subs:[['todo','할 일']]},
- {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list',()=>isMoney()?'지출 내역':'내 신청 내역'],['mypay','내 계좌 내역',()=>!isMoney()],['dash','현황',money],['pay','전도금 처리',money]]},
+ {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list',()=>isMoney()?'지출 내역':'내 신청 내역'],['dash','현황',money],['pay','전도금 처리',money]]},
  {k:'m_inc',l:'수입',vis:money,subs:[['income','수입 등록'],['claim','예산 청구'],['fund','내역 확인']]},
  {k:'m_evt',l:'행사',vis:money,subs:[['events','행사 목록']]},
  {k:'m_acc',l:'계좌',vis:money,subs:[['ledger','내역 확인'],['accts','계좌 관리']]},
@@ -1235,7 +1232,7 @@ async function miscAct(a,id){
     await loadStatic();await loadYear();renderTabs();render();
   }catch(_){}
 }
-const LEAF={todo:renderTodo,mypay:renderMyPay,backup:renderBackup,events:renderEvents,req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderIncStatus,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,
+const LEAF={todo:renderTodo,backup:renderBackup,events:renderEvents,req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderIncStatus,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,
  plan:renderPlan,incitems:()=>sub(setInc),claim:renderClaim,dash:renderDash,
  daily:renderDaily,monthly:renderMonthly,settle:renderSettle,
  annlist:renderAnn,perm:()=>sub(setPerm),items:()=>sub(setAcct),appr:()=>sub(setAppr),year:()=>sub(setYear),users:()=>sub(setUsers)};
