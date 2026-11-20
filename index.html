@@ -691,9 +691,9 @@ function setYear(){
 /* ───── 입금관리 (회계·관리자) ───── */
 const DAY=86400000;
 function payDays(g){return Math.floor((Date.now()-new Date(g.oldest).getTime())/DAY)}
-function usableAccts(){return S.accts.filter(a=>a.active&&(isAdmin()||a.owner_user_id===S.me.user_id))}
+function usableAccts(){return S.accts.filter(a=>a.active&&(isAdmin()||a.kind==='main'||a.owner_user_id===S.me.user_id))}
 function renderPay(which){
-  const ua=usableAccts();if(!S.pickAcct||!ua.some(a=>a.id===S.pickAcct))S.pickAcct=ua[0]?.id||null;
+  const ua=usableAccts();if(!S.pickAcct||!ua.some(a=>a.id===S.pickAcct))S.pickAcct=(ua.find(a=>a.kind==='main')||ua[0])?.id||null;
   const ex=id=>S.expenses.find(e=>e.id===id);
   const tot=S.pay.reduce((s,g)=>s+ +g.total,0);
   const balOf=id=>S.bal.find(b=>b.account_id===id)?.balance??0;
@@ -909,6 +909,85 @@ async function evAct(a,id){
   }catch(_){}
 }
 
+/* ───── 내 계좌 내역 (지출자): 내 계좌로 받은 · 받을 전도금 ───── */
+async function renderMyPay(){
+  $('#main').innerHTML='<div class="card"><div class="card-body empty">불러오는 중…</div></div>';
+  const {data}=await sb.from('expense_payees').select('expense_id,bank_name,account_no,account_holder').eq('user_id',S.me.user_id);
+  if(S.tab!=='mypay')return;
+  const P=new Map((data||[]).map(p=>[p.expense_id,p]));
+  const E=(S.expenses||[]).filter(e=>!e.deleted_at&&e.requested_by===S.me.user_id&&e.pay_method!=='card'&&e.status!=='rejected').sort((a,b)=>a.expense_date<b.expense_date?1:-1);
+  const G=new Map();for(const e of E){const p=P.get(e.id),k=p?p.account_holder+'|'+p.bank_name+'|'+String(p.account_no).replace(/-/g,''):'?';if(!G.has(k))G.set(k,{p,rs:[]});G.get(k).rs.push(e)}
+  const paid=e=>e.status==='paid',tot=(rs,f)=>rs.filter(f).reduce((s,e)=>s+ +e.amount,0);
+  const cards=[...G.values()].map(({p,rs})=>`<div class="card"><div class="card-head"><h3>🏦 ${p?`${esc(p.bank_name)} ${esc(p.account_no)} <span class="note">(${esc(p.account_holder)})</span>`:'계좌 정보 없음'}</h3>
+    <div class="note">받은 금액 <b>${won(tot(rs,paid))}원</b> · 받을 금액 <b class="${tot(rs,e=>!paid(e))?'neg':''}">${won(tot(rs,e=>!paid(e)))}원</b></div></div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>지출일</th><th>내용</th><th class="num">금액</th><th>상태</th><th>입금일</th></tr></thead><tbody>
+    ${rs.map(e=>`<tr><td>${e.expense_date}</td><td>${esc(e.description)}</td><td class="num">${won(e.amount)}</td><td><span class="st st-${e.status}">${paid(e)?'입금완료':'입금 대기'}</span></td><td>${e.paid_at?String(e.paid_at).slice(0,10):''}</td></tr>`).join('')}</tbody></table></div></div>`).join('');
+  $('#main').innerHTML=`<div class="card"><div class="card-body" style="padding:10px 14px"><b>${S.year}년</b> 내가 신청한 개인 결제 건이 어느 계좌로 얼마나 입금됐는지 보여 줍니다. <span class="note">체크카드 결제 건은 받을 돈이 없어 나오지 않아요. 다른 연도는 위쪽 회계연도를 바꿔 보세요.</span></div></div>
+  ${cards||'<div class="card"><div class="card-body empty">아직 전도금을 받을 신청이 없습니다.</div></div>'}`;
+}
+
+/* ───── 백업 · 복구 (관리자) ───── */
+const dlBlob=(blob,name)=>{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000)};
+const bkStamp=()=>{const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`};
+let _zipP;const loadZip=()=>_zipP||(_zipP=new Promise((res,rej)=>{if(window.JSZip)return res(window.JSZip);const s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';s.onload=()=>res(window.JSZip);s.onerror=()=>{_zipP=null;rej(new Error('압축 도구를 불러오지 못했습니다. 인터넷 연결을 확인하세요.'))};document.head.appendChild(s)}));
+const bkAgo=at=>{if(!at)return '아직 없음';const d=Math.floor((Date.now()-new Date(at))/864e5);return `${new Date(at).toLocaleString('ko-KR')} (${d?d+'일 전':'오늘'})`};
+const bkRows=d=>Object.values(d.tables||{}).reduce((s,r)=>s+(r.length||0),0);
+async function backupData(){const {data,error}=await sb.rpc('admin_backup');if(error)throw new Error(error.message);
+  dlBlob(new Blob([JSON.stringify(data)],{type:'application/json'}),`HESSED_백업_${bkStamp()}.json`);return data}
+async function backupReceipts(msg){
+  const JSZip=await loadZip();let paths=[];
+  for(let from=0;;from+=1000){const {data,error}=await sb.from('expenses').select('receipt_path').order('id').range(from,from+999);if(error)throw new Error(error.message);
+    paths.push(...(data||[]).map(r=>r.receipt_path).filter(Boolean));if(!data||data.length<1000)break}
+  paths=[...new Set(paths)];if(!paths.length)throw new Error('백업할 영수증이 없습니다.');
+  const zip=new JSZip();let ok=0;const miss=[];
+  for(let i=0;i<paths.length;i+=50){const chunk=paths.slice(i,i+50);const {data}=await sb.storage.from('receipts').createSignedUrls(chunk,600);
+    await Promise.all(chunk.map(async(p,j)=>{try{const u=(data||[]).find(x=>x.path===p)||(data||[])[j];if(!u||!u.signedUrl)throw 0;const r=await fetch(u.signedUrl);if(!r.ok)throw 0;zip.file(p,await r.blob());ok++}catch(_){miss.push(p)}}));
+    msg(`${Math.min(i+50,paths.length)} / ${paths.length}장 받는 중…`)}
+  if(miss.length)zip.file('_없는파일.txt',miss.join('\n'));
+  msg('압축 중…');dlBlob(await zip.generateAsync({type:'blob'}),`HESSED_영수증_${bkStamp()}.zip`);return {ok,miss:miss.length}}
+function renderBackup(){
+  if(!isAdmin())return;
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>💾 전체 데이터 백업</h3></div><div class="card-body">
+    <p>버튼 한 번으로 <b>모든 기록</b>(지출 신청·승인·지급·반려, 수입, 계좌 입출금, 예산, 행사, 공지, 설정·결재란, 변경 기록, 로그인 계정)을 파일 하나(.json)로 받습니다. 데이터가 지워져도 이 파일 하나로 <b>백업한 시점 그대로</b> 되돌릴 수 있습니다.</p>
+    <p class="note">마지막 백업: <b id="bkLast">확인 중…</b></p>
+    <button class="btn btn-primary" id="bkData">전체 데이터 백업 받기</button>
+    <p class="note neg" style="margin-top:8px">⚠ 백업 파일에는 이름·계좌번호·로그인 정보(암호화된 비밀번호)가 들어 있습니다. 카톡·메일로 돌리지 말고 관리자 PC나 개인 클라우드에만 보관하세요. 한 달에 한 번, 그리고 연도 마감 전에 꼭 받아 두세요.</p></div></div>
+  <div class="card"><div class="card-head"><h3>🧾 영수증 백업</h3></div><div class="card-body">
+    <p>모든 영수증 사진을 압축 파일(.zip) 하나로 받습니다. 파일 안의 폴더·이름이 저장 위치와 같아서 그대로 다시 올릴 수 있습니다.</p>
+    <button class="btn btn-primary" id="bkRc">영수증 백업 받기</button> <span id="bkRcMsg" class="note"></span></div></div>
+  <div class="card"><div class="card-head"><h3>♻️ 복구</h3></div><div class="card-body">
+    <p><b>데이터 복구</b> — 지금 데이터를 모두 지우고 백업 파일 시점으로 되돌립니다. 복구 직전의 데이터는 자동으로 한 번 더 백업 파일로 받아 둡니다. 중간에 실패하면 아무것도 바뀌지 않습니다.</p>
+    <div class="field"><input type="file" id="rsData" accept=".json,application/json"><div id="rsInfo" class="note"></div></div>
+    <button class="btn btn-danger" id="rsDataBtn" disabled>데이터 복구</button>
+    <hr style="border:none;border-top:1px solid var(--rule);margin:16px 0">
+    <p><b>영수증 복구</b> — 영수증 백업(.zip)을 다시 올립니다. 이미 있는 사진은 건너뜁니다.</p>
+    <div class="field"><input type="file" id="rsRc" accept=".zip,application/zip"></div>
+    <button class="btn btn-danger" id="rsRcBtn">영수증 복구</button> <span id="rsRcMsg" class="note"></span></div></div>`;
+  sb.rpc('backup_status').then(({data,error})=>{const el=$('#bkLast');if(el)el.textContent=error?'확인할 수 없음 (0015 SQL 실행 필요)':bkAgo(data?.at)});
+  $('#bkData').onclick=async e=>{const b=e.target;b.disabled=true;b.textContent='백업 중…';
+    try{const d=await backupData();toast(`백업 파일을 받았습니다. (표 ${Object.keys(d.tables).length}개 · ${bkRows(d).toLocaleString()}줄)`);$('#bkLast').textContent=bkAgo(d.created_at)}catch(x){toast('백업 실패: '+x.message,true)}
+    b.disabled=false;b.textContent='전체 데이터 백업 받기'};
+  $('#bkRc').onclick=async e=>{const b=e.target,m=t=>$('#bkRcMsg').textContent=t;b.disabled=true;
+    try{const r=await backupReceipts(m);m(`완료: ${r.ok}장${r.miss?` · 파일 없음 ${r.miss}장(_없는파일.txt 참고)`:''}`)}catch(x){m('');toast(x.message,true)}b.disabled=false};
+  let bk=null;
+  $('#rsData').onchange=async e=>{bk=null;$('#rsDataBtn').disabled=true;const f=e.target.files[0];if(!f){$('#rsInfo').textContent='';return}
+    try{const d=JSON.parse(await f.text());if(d.format!=='hessed-backup-v1'||!d.tables)throw new Error('이 앱의 백업 파일이 아닙니다.');bk=d;
+      $('#rsInfo').innerHTML=`백업 시각 <b>${new Date(d.created_at).toLocaleString('ko-KR')}</b> · 표 ${Object.keys(d.tables).length}개 · ${bkRows(d).toLocaleString()}줄 · 지출 ${(d.tables.expenses||[]).length}건 · 계정 ${(d.tables.profiles||[]).length}명`;$('#rsDataBtn').disabled=false}
+    catch(x){$('#rsInfo').innerHTML=`<span class="neg">${esc(x instanceof SyntaxError?'파일을 읽을 수 없습니다.':x.message)}</span>`}};
+  $('#rsDataBtn').onclick=async e=>{if(!bk)return;
+    if(prompt(`⚠ 지금 데이터를 모두 지우고 ${new Date(bk.created_at).toLocaleString('ko-KR')} 백업으로 되돌립니다.\n그 뒤에 입력한 내역은 사라집니다. (지금 데이터는 복구 직전에 자동으로 백업 파일로 받아 둡니다)\n\n계속하려면 복구 라고 입력하세요.`)!=='복구')return toast('취소했습니다.');
+    const b=e.target;b.disabled=true;b.textContent='지금 데이터 백업 중…';
+    try{await backupData();b.textContent='복구 중…';const {data,error}=await sb.rpc('admin_restore',{p_backup:bk,p_confirm:'복구'});if(error)throw new Error(error.message);
+      const n=Object.values(data.tables||{}).reduce((s,x)=>s+x,0);alert(`복구를 마쳤습니다.\n\n${n.toLocaleString()}줄을 백업 시점으로 되돌렸습니다.\n로그인 계정: ${data.auth}\n\n화면을 새로 불러옵니다.`);location.reload()}
+    catch(x){toast('복구 실패(데이터는 바뀌지 않았습니다): '+x.message,true);b.disabled=false;b.textContent='데이터 복구'}};
+  $('#rsRcBtn').onclick=async e=>{const f=$('#rsRc').files[0];if(!f)return toast('영수증 백업(.zip) 파일을 고르세요.',true);const b=e.target,m=t=>$('#rsRcMsg').textContent=t;b.disabled=true;
+    try{const JSZip=await loadZip(),z=await JSZip.loadAsync(f),files=Object.values(z.files).filter(x=>!x.dir&&!x.name.split('/').pop().startsWith('_'));let up=0,skip=0,fail=0;
+      for(let i=0;i<files.length;i++){const x=files[i],ext=x.name.split('.').pop().toLowerCase();
+        const {error}=await sb.storage.from('receipts').upload(x.name,await x.async('blob'),{contentType:ext==='png'?'image/png':ext==='webp'?'image/webp':'image/jpeg',upsert:false});
+        if(!error)up++;else if(/exists|Duplicate/i.test(error.message))skip++;else fail++;if(i%5===0)m(`${i+1} / ${files.length}장 올리는 중…`)}
+      m(`완료: 새로 올림 ${up}장 · 이미 있음 ${skip}장${fail?` · 실패 ${fail}장`:''}`)}catch(x){m('');toast(x.message,true)}b.disabled=false};
+}
+
 /* ───── 할 일 (회계·관리자 첫 화면): 입금할 전도금 · 카드 결제확인 · 수입 입금확인 · 마감 ───── */
 function todoData(){
   const E=(S.expenses||[]).filter(e=>!e.deleted_at&&canProcess(e));
@@ -931,6 +1010,8 @@ function renderTodo(){
   main.insertAdjacentHTML('beforeend',`<div class="card" id="todoCard"><div class="card-head"><h3>💳 체크카드 결제확인 (${d.card.length}건)</h3></div>
     ${d.card.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>지출일</th><th>항 / 목 / 적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th></th></tr></thead><tbody>${d.card.map(tr).join('')}</tbody></table></div>`:'<div class="empty">확인할 카드 결제가 없습니다. 👍</div>'}
     <div class="card-body"><p class="note">입금완료·결제확인을 누르면 승인도 함께 처리됩니다(따로 승인하지 않아도 됩니다). 잘못 올라온 신청은 [반려]하거나, 개인 결제 건은 [지출 › 지출 내역]에서 반려하세요.</p></div></div>`);
+  if(isAdmin())sb.rpc('backup_status').then(({data,error})=>{if(error||S.tab!=='todo')return;const d=data?.at?Math.floor((Date.now()-new Date(data.at))/864e5):null;if(d!==null&&d<30)return;
+    const g=main.querySelector('.todo-grid');if(g)g.insertAdjacentHTML('beforebegin',`<div class="abar abar-orange" style="margin-bottom:10px">💾 ${d===null?'아직 전체 백업을 받은 적이 없습니다.':`마지막 전체 백업이 ${d}일 전입니다.`} <button class="btn btn-sm abtn" data-tab="backup">백업하러 가기</button></div>`)});
   main.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const g=b.dataset.go;if(g.startsWith('tab:')){S.tab=g.slice(4);renderTabs();return render()}const el=main.querySelector(g);if(el)el.scrollIntoView({behavior:'smooth',block:'start'})});
 }
 
@@ -938,13 +1019,13 @@ function renderTodo(){
 const all=()=>true,money=()=>isMoney(),adm=()=>isAdmin();
 const MENU=[
  {k:'m_todo',l:'할 일',vis:money,subs:[['todo','할 일']]},
- {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list',()=>isMoney()?'지출 내역':'내 신청 내역'],['dash','현황',money],['pay','전도금 처리',money]]},
+ {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list',()=>isMoney()?'지출 내역':'내 신청 내역'],['mypay','내 계좌 내역',()=>!isMoney()],['dash','현황',money],['pay','전도금 처리',money]]},
  {k:'m_inc',l:'수입',vis:money,subs:[['income','수입 등록'],['claim','예산 청구'],['fund','내역 확인']]},
  {k:'m_evt',l:'행사',vis:money,subs:[['events','행사 목록']]},
- {k:'m_acc',l:'계좌',vis:money,subs:[['ledger','내역 확인'],['transfer','계좌 간 이체'],['accts','계좌 관리']]},
+ {k:'m_acc',l:'계좌',vis:money,subs:[['ledger','내역 확인'],['accts','계좌 관리']]},
  {k:'m_aud',l:'감사',vis:money,subs:[['daily','일일 수지내역'],['monthly','월별 수지내역'],['settle','수지결산보고서']]},
  {k:'m_ann',l:'공지',vis:all,subs:[['annlist','공지 목록']]},
- {k:'m_set',l:'관리',vis:adm,subs:[['plan','예산 수립',adm],['perm','담당 회계',adm],['items','계정·적요',adm],['incitems','수입 계정항목',adm],['users','계정 관리',adm],['appr','결재란 설정',adm],['year','연도·마감',adm]]}];
+ {k:'m_set',l:'관리',vis:adm,subs:[['plan','예산 수립',adm],['perm','담당 회계',adm],['items','계정·적요',adm],['incitems','수입 계정항목',adm],['users','계정 관리',adm],['appr','결재란 설정',adm],['year','연도·마감',adm],['backup','백업·복구',adm]]}];
 const subOf=m=>m.subs.filter(s=>(s[2]||m.vis)());
 const topOf=k=>MENU.find(m=>m.subs.some(s=>s[0]===k));
 function sub(fn){$('#main').innerHTML='<div id="subbody"></div>';fn()}
@@ -1128,14 +1209,6 @@ function renderLedger(){
   <div class="filters"><select id="la">${ac.length>1?`<option value="0" ${all?'selected':''}>전체 계좌 (한 번에 보기)</option>`:''}${ac.map(x=>`<option value="${x.id}" ${x.id===S.ledAcct?'selected':''}>${esc(x.label)}</option>`).join('')}</select><select id="lm"><option value="">전체 기간</option>${months.map(m=>`<option ${m===mon?'selected':''}>${m}</option>`).join('')}</select></div></div>${txTable(rows,!all)}</div>`;
   $('#la').onchange=e=>{S.ledAcct=+e.target.value;renderLedger()};$('#lm').onchange=e=>{S.ledMon=e.target.value;renderLedger()};
 }
-function renderTransfer(){
-  const o=S.accts.filter(a=>a.active).map(a=>`<option value="${a.id}">${esc(a.label)} (${esc(a.bank_name)} ${esc(a.account_no)})</option>`).join('');
-  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>계좌 간 이체 기록</h3></div><div class="card-body"><p class="note">총괄계좌에서 개인 계좌로 전도금을 보낸 경우처럼, 실제 이체를 마친 뒤 양쪽 계좌에 출금·입금 내역을 함께 기록합니다. 본인 계좌가 포함된 이체만 등록할 수 있습니다.</p>
-  <div class="grid2"><div class="field"><label>보내는 계좌</label><select id="tf">${o}</select></div><div class="field"><label>받는 계좌</label><select id="tt">${o}</select></div></div>
-  <div class="grid3"><div class="field"><label>금액(원)</label><input id="tam" class="amt" type="text" inputmode="numeric" autocomplete="off"></div><div class="field"><label>일자</label><input id="td" type="date" value="${TODAY()}"></div><div class="field"><label>메모</label><input id="tm"></div></div>
-  <button class="btn btn-primary" id="tbtn">기록</button></div></div>`;
-  $('#tbtn').onclick=async()=>{try{await rpc('transfer_between',{p_year:S.year,p_from:+$('#tf').value,p_to:+$('#tt').value,p_amount:+$('#tam').value,p_date:$('#td').value,p_memo:$('#tm').value||null});toast('기록했습니다.');await loadStatic();await loadYear();renderTabs();render()}catch(_){}};
-}
 function renderIncStatus(){
   renderFund();const f=$('#main').innerHTML;renderIncList();$('#main').innerHTML=f+$('#main').innerHTML}
 function setUsers(){
@@ -1162,7 +1235,7 @@ async function miscAct(a,id){
     await loadStatic();await loadYear();renderTabs();render();
   }catch(_){}
 }
-const LEAF={todo:renderTodo,events:renderEvents,req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderIncStatus,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,transfer:renderTransfer,
+const LEAF={todo:renderTodo,mypay:renderMyPay,backup:renderBackup,events:renderEvents,req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderIncStatus,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,
  plan:renderPlan,incitems:()=>sub(setInc),claim:renderClaim,dash:renderDash,
  daily:renderDaily,monthly:renderMonthly,settle:renderSettle,
  annlist:renderAnn,perm:()=>sub(setPerm),items:()=>sub(setAcct),appr:()=>sub(setAppr),year:()=>sub(setYear),users:()=>sub(setUsers)};
