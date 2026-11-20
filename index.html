@@ -731,71 +731,131 @@ async function payAct(a,i){
 
 /* ───── 행사 (0010: 지출에 붙는 꼬리표) ───── */
 // 행사 지출은 [지출 신청]에서 행사를 골라 올리고, 승인·지급·결의서는 다른 지출과 똑같이 처리.
-// 감사 보고서(월별·결산)에는 항·목 합계로만 들어가고, 행사별 상세는 「행사 정산 부록」(적요별)으로 출력.
+// 감사 보고서(월별·결산)에는 항·목 합계로만 들어가고, 행사별 상세는 「행사 지결서」(내역별·적요별)로 출력.
 const evById=id=>(S.events||[]).find(e=>e.id===+id);
 const evMoney=ev=>isAdmin()||hasScope(0,ev.category_id);
 const evYearOk=ev=>isAdmin()||!S.years.find(y=>y.year===ev.fiscal_year)?.locked;
 const evAcct=ev=>acctLabel(ev.category_id,ev.item_id);
 const evExp=ev=>(S.expenses||[]).filter(e=>e.event_id===ev.id&&!e.deleted_at&&e.status!=='rejected');
 const evTot=ev=>{const L=evExp(ev),done=L.filter(e=>e.status==='approved'||e.status==='paid');return {used:sum(done,'amount'),wait:sum(L.filter(e=>e.status==='requested'),'amount'),n:L.length}};
+const evPeriod=ev=>ev.start_date?ev.start_date+(ev.end_date&&ev.end_date!==ev.start_date?' ~ '+ev.end_date:''):'';
+function evListHTML(curId){
+  const L=S.events||[];
+  return L.length?`<table class="tbl"><thead><tr><th>행사</th><th>계정 (항 › 목)</th><th>행사 회계</th><th>기간</th><th class="num">계획 예산</th><th class="num">지출 (승인·지급)</th><th class="num">대기</th><th>상태</th><th></th></tr></thead><tbody>
+  ${L.map(e=>{const t=evTot(e),me=e.id===curId;return `<tr${me?' style="background:var(--paper)"':''}><td><b>${esc(e.name)}</b>${me?' <span class="note">(보는 중)</span>':''}${(e.keywords||[]).length?`<div class="note">${esc(e.keywords.join(', '))}</div>`:''}</td><td style="font-size:12px">${esc(evAcct(e))}</td><td>${esc(e.manager_id?pn(e.manager_id):'-')}</td><td style="font-size:12px">${evPeriod(e)}</td>
+    <td class="num">${e.plan_amount?won(e.plan_amount):''}</td><td class="num">${won(t.used)}</td><td class="num">${t.wait?won(t.wait):''}</td>
+    <td class="ctr">${e.status==='closed'?'<span class="st st-paid">마감</span>':'<span class="st st-approved">진행 중</span>'}</td><td>${me?'':`<button class="btn btn-primary btn-sm" data-act="evopen" data-id="${e.id}">열기</button>`}</td></tr>`}).join('')}</tbody></table>`
+    :'<div class="empty">이 연도에 등록된 행사가 없습니다.</div>';
+}
 function renderEvents(){
   const cur=S.evId&&evById(S.evId);if(cur)return renderEventDetail(cur);S.evId=null;
   const L=S.events||[],canNew=allowedCombos().length>0;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${S.year}년 행사</h3>${canNew?'<button class="btn btn-primary btn-sm" data-act="evnew">+ 행사 등록</button>':''}</div>
-  <div class="card-body"><p class="note">행사는 <b>항 › 목</b>(예: 행사운영비 › 전도사역)에 묶어 등록합니다. 지출 신청 때 내용에 <b>행사 이름(또는 키워드)</b>을 쓰면 그 행사와 항·목이 자동으로 골라지고, 지출은 다른 지출과 똑같이 승인·지급·지출결의서로 처리됩니다. 월별 수지내역·수지결산보고서에는 항·목 합계로만 들어가고, 행사별 적요 상세는 <b>행사 정산 부록</b>으로 출력합니다.<br>선교처럼 돈을 먼저 보내는 행사는 [계좌-계좌 관리]에 행사 회계 계좌를 등록하고 [계좌 간 이체]로 보낸 뒤, 행사 회계가 [전도금 처리]에서 그 계좌로 지급합니다.</p></div>
-  <div class="tblwrap">${L.length?`<table class="tbl"><thead><tr><th>행사</th><th>계정 (항 › 목)</th><th>행사 회계</th><th>기간</th><th class="num">계획 예산</th><th class="num">지출 (승인·지급)</th><th class="num">대기</th><th>상태</th><th></th></tr></thead><tbody>
-  ${L.map(e=>{const t=evTot(e);return `<tr><td><b>${esc(e.name)}</b>${(e.keywords||[]).length?`<div class="note">${esc(e.keywords.join(', '))}</div>`:''}</td><td style="font-size:12px">${esc(evAcct(e))}</td><td>${esc(e.manager_id?pn(e.manager_id):'-')}</td><td style="font-size:12px">${e.start_date||''}${e.end_date?' ~ '+e.end_date:''}</td>
-    <td class="num">${e.plan_amount?won(e.plan_amount):''}</td><td class="num">${won(t.used)}</td><td class="num">${t.wait?won(t.wait):''}</td>
-    <td class="ctr">${e.status==='closed'?'<span class="st st-paid">마감</span>':'<span class="st st-approved">진행 중</span>'}</td><td><button class="btn btn-primary btn-sm" data-act="evopen" data-id="${e.id}">열기</button></td></tr>`}).join('')}</tbody></table>`
-    :'<div class="empty">이 연도에 등록된 행사가 없습니다.</div>'}</div></div>
-  ${L.length&&isMoney()?'<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" data-act="evapx">행사 정산 부록 인쇄 (전체 행사 · 감사용)</button></div>':''}`;
+  <div class="card-body"><p class="note">행사는 <b>항 › 목</b>(예: 행사운영비 › 전도사역)에 묶어 등록합니다. 지출 신청 때 내용에 <b>행사 이름(또는 키워드)</b>을 쓰면 그 행사와 항·목이 자동으로 골라지고, 지출은 다른 지출과 똑같이 승인·지급·지출결의서로 처리됩니다. 월별 수지내역·수지결산보고서에는 항·목 합계로만 들어가고, 행사별 상세는 <b>행사 정산 인쇄</b>(행사 지결서 + 영수증)로 출력합니다. 행사 수입(회비·후원금)은 [수입-수입 등록]에서 행사를 골라 등록합니다.<br>선교처럼 돈을 먼저 보내는 행사는 [계좌-계좌 관리]에 행사 회계 계좌를 등록하고 [계좌 간 이체]로 보낸 뒤, 행사 회계가 [전도금 처리]에서 그 계좌로 지급합니다.</p>
+  ${L.length&&isMoney()?'<div style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn btn-primary btn-sm" data-act="evapx">내역별 행사 정산 인쇄 (전체 행사)</button><button class="btn btn-primary btn-sm" data-act="evapxa">적요별 행사 정산 인쇄 (전체 행사)</button></div>':''}</div>
+  <div class="tblwrap">${evListHTML(null)}</div></div>`;
 }
 function renderEventDetail(ev){
   const t=evTot(ev),L=evExp(ev).slice().sort((a,b)=>a.expense_date<b.expense_date?-1:a.expense_date>b.expense_date?1:a.id-b.id),mo=evMoney(ev)&&evYearOk(ev),open=ev.status==='open';
   const byAc={};L.filter(e=>e.status!=='requested').forEach(e=>{const k=acNm(e.acct_id)||(e.sub_item_id?snm(e.sub_item_id):'(적요 없음)');byAc[k]=(byAc[k]||0)+ +e.amount});
   const btn=(act,label,cls='btn-ghost')=>`<button class="btn ${cls} btn-sm" data-act="${act}" data-id="${ev.id}">${label}</button>`;
-  const bar=[btn('evback','← 행사 목록'),mo?btn('evset','행사 설정'):'',mo&&open?btn('evclose','마감 (신청 받지 않음)'):'',mo&&!open?btn('evreopen','다시 열기'):'',
-    isMoney()?btn('evinc','+ 행사 수입 등록 (회비·후원금)','btn-green'):'',btn('evprres','지출결의서 일괄 인쇄'),isMoney()?btn('evapx1','행사 정산 부록 인쇄'):'',mo?btn('evdel','행사 삭제'):''].filter(Boolean).join(' ');
+  const bar=[btn('evback','목록보기'),mo?btn('evset','행사개요 수정'):'',btn('evprsel','지결서 개별 인쇄','btn-primary'),
+    isMoney()?btn('evapx1','내역별 행사 정산 인쇄','btn-primary'):'',isMoney()?btn('evapxa1','적요별 행사 정산 인쇄','btn-primary'):''].filter(Boolean).join(' ');
   const tile=(k,v,c)=>`<div class="card" style="flex:1;min-width:120px;margin:0"><div class="card-body" style="padding:10px 12px"><div class="note">${k}</div><div style="font-size:17px;font-weight:800;${c?'color:'+c:''}">${won(v)}원</div></div></div>`;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${esc(ev.name)} ${open?'<span class="st st-approved">진행 중</span>':'<span class="st st-paid">마감</span>'}</h3></div>
-  <div class="card-body"><div class="note" style="margin-bottom:8px">계정 <b>${esc(evAcct(ev))}</b> · 행사 회계 <b>${esc(ev.manager_id?pn(ev.manager_id):'미지정')}</b>${ev.start_date?` · 기간 ${ev.start_date}${ev.end_date?' ~ '+ev.end_date:''}`:''}${(ev.keywords||[]).length?` · 키워드 ${esc(ev.keywords.join(', '))}`:''}</div>
+  <div class="card-body"><div class="note" style="margin-bottom:8px">계정 <b>${esc(evAcct(ev))}</b> · 행사 회계 <b>${esc(ev.manager_id?pn(ev.manager_id):'미지정')}</b>${ev.start_date?` · 기간 ${evPeriod(ev)}`:''}${(ev.keywords||[]).length?` · 키워드 ${esc(ev.keywords.join(', '))}`:''}</div>
+  ${ev.subject||ev.note?`<div style="margin-bottom:10px;font-size:13px">${ev.subject?`<div><b>주제</b> ${esc(ev.subject)}</div>`:''}${ev.note?`<div><b>비고</b> ${esc(ev.note)}</div>`:''}</div>`:''}
   <div style="display:flex;gap:6px;flex-wrap:wrap">${bar}</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${tile('계획 예산',+ev.plan_amount||0)}${tile('지출 (승인·지급)',t.used,'#c0392b')}${tile('대기 (신청)',t.wait)}${ev.plan_amount?tile('계획 대비 남은 금액',ev.plan_amount-t.used-t.wait,ev.plan_amount-t.used-t.wait<0?'#c0392b':''):''}</div>
-  ${ev.note?`<p class="note" style="margin-top:8px">${esc(ev.note)}</p>`:''}</div>
-  <div class="tblwrap">${L.length?`<table class="tbl"><thead><tr><th class="num">No.</th><th>지출일</th><th>적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th></tr></thead><tbody>${L.map(e=>`<tr><td class="num">${e.voucher_no??''}</td><td>${e.expense_date}</td><td>${esc(acNm(e.acct_id)||snm(e.sub_item_id))}</td><td>${esc(e.description)}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td><span class="st st-${e.status}">${e.pay_method==='card'&&e.status==='paid'?'결제완료':ST[e.status]}</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">아직 이 행사로 신청된 지출이 없습니다. [지출 신청]에서 내용에 행사 이름을 쓰거나 행사를 고르세요.</div>'}</div></div>
-  ${Object.keys(byAc).length?`<div class="card"><div class="card-head"><h3>적요별 지출 (승인·지급)</h3></div><div class="tblwrap"><table class="tbl"><tbody>${Object.entries(byAc).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${won(v)}</td></tr>`).join('')}<tr style="font-weight:800;background:var(--paper)"><td>합계</td><td class="num">${won(t.used)}</td></tr></tbody></table></div></div>`:''}`;
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${tile('계획 예산',+ev.plan_amount||0)}${tile('지출 (승인·지급)',t.used,'#c0392b')}${tile('대기 (신청)',t.wait)}${ev.plan_amount?tile('계획 대비 남은 금액',ev.plan_amount-t.used-t.wait,ev.plan_amount-t.used-t.wait<0?'#c0392b':''):''}</div></div>
+  <div class="tblwrap">${L.length?`<table class="tbl"><thead><tr><th class="ctr" style="width:34px"><input type="checkbox" id="evckall" title="모두 선택"></th><th class="num">No.</th><th>지출일</th><th>적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th></tr></thead><tbody>${L.map(e=>`<tr><td class="ctr"><input type="checkbox" class="evck" value="${e.id}"></td><td class="num">${e.voucher_no??''}</td><td>${e.expense_date}</td><td>${esc(acNm(e.acct_id)||snm(e.sub_item_id))}</td><td>${esc(e.description)}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td><span class="st st-${e.status}">${e.pay_method==='card'&&e.status==='paid'?'결제완료':ST[e.status]}</span></td></tr>`).join('')}</tbody></table>`:'<div class="empty">아직 이 행사로 신청된 지출이 없습니다. [지출 신청]에서 내용에 행사 이름을 쓰거나 행사를 고르세요.</div>'}</div></div>
+  ${Object.keys(byAc).length?`<div class="card"><div class="card-head"><h3>적요별 지출 (승인·지급)</h3></div><div class="tblwrap"><table class="tbl"><tbody>${Object.entries(byAc).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${won(v)}</td></tr>`).join('')}<tr style="font-weight:800;background:var(--paper)"><td>합계</td><td class="num">${won(t.used)}</td></tr></tbody></table></div></div>`:''}
+  <div class="card"><div class="card-head"><h3>${S.year}년 행사 목록</h3></div><div class="tblwrap">${evListHTML(ev.id)}</div></div>`;
+  const all=$('#evckall');if(all)all.onchange=()=>document.querySelectorAll('.evck').forEach(c=>c.checked=all.checked);
 }
-// 감사용 행사 정산 부록: 행사마다 적요별 수입·지출 정리 + 상세 내역
-async function printEventAppendix(only){
-  const L=(S.events||[]).filter(e=>!only||e.id===only);if(!L.length)return toast('이 연도에 행사가 없습니다.',true);
-  toast('행사 정산 부록 준비 중…');
+
+/* ── 행사 지결서 (내역별 / 적요별) + 영수증 첨부(장당 4개) ── */
+const EVCSS=`<style>.evd .rhead{margin-bottom:10px}.evd .rtitle{text-align:left;margin:0 0 4px}.evsec{font-weight:700;font-size:10.5pt;margin:10px 0 3px}.evd .rt th,.evd .rt td{padding:4px 6px;font-size:9.5pt}.evd .rt .n{text-align:right}.evd .rt .c{text-align:center}.evd .rt tr.sum td{font-weight:700;background:#f7f6f2}
+.rcpg{height:276mm;display:flex;flex-direction:column;overflow:hidden}.rcpg .rch{font-weight:700;font-size:11pt;margin-bottom:4px}.rcgrid{flex:1 1 0;min-height:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:4mm}
+.rcc{display:flex;flex-direction:column;min-height:0;border:1px solid #000}.rcc table{width:100%;border-collapse:collapse;table-layout:fixed;flex:none}.rcc th,.rcc td{border-bottom:1px solid #000;padding:2px 4px;font-size:8.5pt;text-align:center}.rcc th{background:#eeecea}.rcc th+th,.rcc td+td{border-left:1px solid #000}
+.rcc .ri{flex:1 1 0;min-height:0;display:flex;align-items:center;justify-content:center;padding:2mm}.rcc .ri img{max-width:100%;max-height:100%;object-fit:contain}.rcc .ri span{color:#999;font-size:9pt}</style>`;
+const mostOf=a=>{const m=new Map();a.filter(Boolean).forEach(x=>m.set(x,(m.get(x)||0)+1));let b=null,n=0;m.forEach((v,k)=>{if(v>n){b=k;n=v}});return b};
+// 정산받을 계좌: 지출자마다 계좌가 다르면 어느 계좌로 일괄 출금할지 고름 → {one:acc} | {split:true} | null(취소)
+function pickPayee(ev,accs){
+  return new Promise(res=>{
+    const m=modal(`<h3>정산받을 계좌 선택 — ${esc(ev.name)}</h3>
+    <p class="note">이 행사 지출의 받는 계좌가 <b>${accs.length}개</b>입니다. 어느 계좌로 <b>전체 일괄 출금</b>할지 고르세요. 고른 계좌의 신청자가 결재란 「담당」에 들어갑니다.</p>
+    ${accs.map((a,i)=>`<label style="display:block;margin:6px 0;padding:8px 10px;border:1px solid var(--line);border-radius:8px"><input type="radio" name="pyk" value="${i}" ${i?'':'checked'}> <b>${esc(a.holder||'(예금주 없음)')}</b> · ${esc(a.bank||'')} ${esc(a.no||'(계좌 정보 없음)')}<div class="note" style="margin-left:22px">${a.n}건 · ${won(a.amt)}원 · 신청: ${esc([...new Set(a.who.map(pn))].join(', '))}</div></label>`).join('')}
+    <label style="display:block;margin:6px 0;padding:8px 10px;border:1px dashed var(--line);border-radius:8px"><input type="radio" name="pyk" value="split"> 계좌별로 나눠 적기</label>
+    <div class="actions"><button class="btn btn-ghost" id="pyx">취소</button><button class="btn btn-primary" id="pyok">인쇄 계속</button></div>`);
+    m.querySelector('#pyx').onclick=()=>{m.remove();res(null)};
+    m.querySelector('#pyok').onclick=()=>{const v=m.querySelector('input[name=pyk]:checked').value;m.remove();res(v==='split'?{split:true}:{one:accs[+v]})};
+  })}
+async function printEventSettle(only,mode){ // mode: 'row' 내역별 | 'acct' 적요별
+  const EV=(S.events||[]).filter(e=>!only||e.id===only);if(!EV.length)return toast('이 연도에 행사가 없습니다.',true);
+  toast('행사 정산 준비 중…');
   let rows;try{rows=await rpc('report_rows',{p_year:S.year})}catch(_){return}
-  const vno=r=>r.kind==='expense'?(S.expenses.find(x=>x.id===r.ref_id)?.voucher_no??''):'';
   const nm=r=>acNm(r.acct_id)||(r.sub_item_id?snm(r.sub_item_id):'')||(r.kind==='income'?incCn(r.inc_cat_id):'(적요 없음)');
-  const pages=L.map(ev=>{
-    const R=rows.filter(r=>r.event_id===ev.id).sort((a,b)=>a.dt<b.dt?-1:a.dt>b.dt?1:0),I=R.filter(r=>r.kind==='income'),E=R.filter(r=>r.kind==='expense');
-    const grp=A=>{const m=new Map();A.forEach(r=>{const k=nm(r);m.set(k,(m.get(k)||0)+ +r.amount)});return [...m.entries()]};
-    const gi=grp(I),ge=grp(E),ti=sum(I,'amount'),te=sum(E,'amount'),body=[];
-    body.push([H('적요별 정리',{cs:6,b:1,bg:BG.head,al:'c'})]);
-    gi.forEach(([k,v],i)=>body.push([H(i?'':'수입',{b:1,bg:BG.inc,al:'c'}),H(k,{cs:3}),H(v,{num:1}),H('')]));
-    ge.forEach(([k,v],i)=>body.push([H(i?'':'지출',{b:1,bg:BG.exp,al:'c'}),H(k,{cs:3}),H(''),H(v,{num:1})]));
-    body.push([H('합 계',{cs:4,b:1,bg:BG.sum,al:'c'}),H(ti,{num:1,b:1,bg:BG.sum}),H(te,{num:1,b:1,bg:BG.sum})]);
-    body.push([H(ev.plan_amount?`계획 예산 ${won(ev.plan_amount)}원 · 행사 순비용(지출 − 행사 수입) ${won(te-ti)}원`:`행사 순비용(지출 − 행사 수입) ${won(te-ti)}원`,{cs:6,b:1,bg:BG.rem,al:'c'})]);
-    body.push([H('상세 내역',{cs:6,b:1,bg:BG.head,al:'c'})]);
-    body.push([H('날짜',{b:1,al:'c'}),H('No.',{b:1,al:'c'}),H('적요',{b:1,al:'c'}),H('내용',{b:1,al:'c'}),H('수입',{b:1,al:'c'}),H('지출',{b:1,al:'c'})]);
-    R.forEach(r=>{const s=String(r.summary||''),p=nm(r)+' · ';body.push([H(r.dt),H(vno(r),{al:'c'}),H(nm(r)),H(s.startsWith(p)?s.slice(p.length):s),H(r.kind==='income'?+r.amount:'',{num:1,color:'#1a6b3c'}),H(r.kind==='expense'?+r.amount:'',{num:1,color:'#c0392b'})])});
-    if(!R.length)body.push([H('승인·지급된 내역이 없습니다.',{cs:6,al:'c'})]);
-    return mHTML({title:`[부록] ${ev.name} 행사 정산`,sub:`${S.year}년 · 소망교회 청년회 · 계정: ${evAcct(ev)}\n행사 회계: ${ev.manager_id?pn(ev.manager_id):'-'}${ev.start_date?` · 기간: ${ev.start_date}${ev.end_date?' ~ '+ev.end_date:''}`:''} · 상태: ${ev.status==='closed'?'마감':'진행 중'}\n(단위: 원, 승인·지급 기준)`,
-      widths:[11,7,15,41,13,13],head:[],body})});
-  printPages(pages.join(''),{title:`${S.year} 행사 정산 부록`});
+  const ds=r=>{const s=String(r.summary||''),p=nm(r)+' · ';return s.startsWith(p)?s.slice(p.length):s};
+  const xp=r=>S.expenses.find(x=>x.id===r.ref_id);
+  const byDt=(a,b)=>a.dt<b.dt?-1:a.dt>b.dt?1:a.ref_id-b.ref_id;
+  const sets=EV.map(ev=>{const R=rows.filter(r=>r.event_id===ev.id);return {ev,I:R.filter(r=>r.kind==='income').sort(byDt),E:R.filter(r=>r.kind==='expense').sort(byDt)}});
+  const tIds=sets.flatMap(s=>s.E).filter(r=>xp(r)?.pay_method!=='card').map(r=>r.ref_id),py={};
+  if(tIds.length){try{const {data}=await sb.from('expense_payees').select('expense_id,bank_name,account_no,account_holder').in('expense_id',tIds);(data||[]).forEach(p=>py[p.expense_id]=p)}catch(_){}}
+  const urls={};await Promise.all(sets.flatMap(s=>s.E).filter(r=>r.receipt_path).map(async r=>{urls[r.ref_id]=await receiptUrl(r.receipt_path)}));
+  const bz=slotsBy('expense',null).find(s=>/부장/.test(String(s.label||'')));
+  const pages=[];
+  for(const {ev,I,E} of sets){
+    // 정산받을 계좌 (체크카드는 총괄계좌에서 이미 출금)
+    const T=E.filter(r=>xp(r)?.pay_method!=='card'),card=sum(E.filter(r=>xp(r)?.pay_method==='card'),'amount');
+    const am=new Map();T.forEach(r=>{const p=py[r.ref_id],k=p?[p.bank_name,p.account_no,p.account_holder].join('|'):'?';
+      if(!am.has(k))am.set(k,{bank:p?.bank_name||'',no:p?.account_no||'',holder:p?.account_holder||'',amt:0,n:0,who:[]});const a=am.get(k);a.amt+=+r.amount;a.n++;a.who.push(r.requester)});
+    let accs=[...am.values()].sort((a,b)=>b.amt-a.amt),payRows=accs,dam=mostOf(E.map(r=>r.requester));
+    if(accs.length>1){const c=await pickPayee(ev,accs);if(!c)return toast('인쇄를 취소했습니다.');
+      if(c.one){payRows=[{...c.one,amt:sum(T,'amount')}];dam=mostOf(c.one.who)||dam}}
+    else if(accs.length===1)dam=mostOf(accs[0].who)||dam;
+    const acc=ev.manager_id||mostOf(E.map(r=>xp(r)?.approved_by||xp(r)?.paid_by));
+    const cell=(l,who,img)=>`<td>${img?`<img src="${esc(img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(who||'')}</td>`;
+    const sign=`<table class="ap"><tr><th>담당</th><th>회계</th><th>${esc(bz?.label||'부장집사')}</th></tr><tr>${cell('담당',dam?pn(dam):'')}${cell('회계',acc?pn(acc):'',apDamSign(acc))}${cell('부장',bz?.signer||'',bz?.sign_img||'')}</tr></table>`;
+    const ti=sum(I,'amount'),te=sum(E,'amount'),net=te-ti,plan=+ev.plan_amount||0;
+    // 내역: 수입 먼저, 그다음 지출 (각각 날짜순). 적요별은 같은 적요끼리 합산(날짜 칸 없음)
+    let list;
+    if(mode==='acct'){const g=(A,kind)=>{const m=new Map();A.forEach(r=>{const k=nm(r);if(!m.has(k))m.set(k,{kind,ac:k,rs:[]});m.get(k).rs.push(r)});return [...m.values()]};
+      list=[...g(I,'income'),...g(E,'expense')].map((x,i)=>({no:i+1,kind:x.kind,ac:x.ac,desc:[...new Set(x.rs.map(ds).filter(Boolean))].join(', '),amt:sum(x.rs,'amount'),rs:x.rs}));
+    }else list=[...I,...E].map((r,i)=>({no:i+1,kind:r.kind,dt:r.dt,ac:nm(r),desc:ds(r),amt:+r.amount,rs:[r]}));
+    const A=mode==='acct';
+    const tr=list.map(x=>`<tr><td class="c">${x.no}</td>${A?'':`<td class="c">${esc(x.dt)}</td>`}<td>${esc(x.ac)}</td><td>${esc(x.desc)}</td><td class="n">${x.kind==='income'?won(x.amt):''}</td><td class="n">${x.kind==='expense'?won(x.amt):''}</td></tr>`).join('')
+      ||`<tr><td colspan="${A?5:6}" class="c">승인·지급된 내역이 없습니다.</td></tr>`;
+    const payTr=payRows.length?payRows.map(a=>`<tr><td class="c">${esc(a.bank)}</td><td class="c">${esc(a.no||(a.holder?'':'(계좌 정보를 볼 권한이 없습니다)'))}</td><td class="c">${esc(a.holder)}</td><td class="n">${won(a.amt)}원</td></tr>`).join('')
+      :`<tr><td colspan="4" class="c">개인 결제(전도금) 지출이 없어 정산할 금액이 없습니다.</td></tr>`;
+    pages.push(`<div class="pg evd"><div class="rhead"><div><div class="rtitle">${esc(ev.name)} 행사 지결서</div><div>소망교회 청년회 HESSED · ${ev.fiscal_year||S.year}년${A?' · 적요별':''}</div></div>${sign}</div>
+    <div class="evsec">■ 행사개요</div>
+    <table class="rt"><colgroup><col style="width:13%"><col style="width:37%"><col style="width:13%"><col style="width:37%"></colgroup>
+    <tr><th>일 자</th><td>${esc(evPeriod(ev))}</td><th>계 정</th><td>${esc(evAcct(ev))}</td></tr>
+    <tr><th>주 제</th><td colspan="3">${esc(ev.subject||'')}</td></tr><tr><th>비 고</th><td colspan="3">${esc(ev.note||'')}</td></tr></table>
+    <div class="evsec">■ 지출내역</div>
+    <table class="rt" style="margin-bottom:4px"><tr><th>계획 예산</th><td class="n">${plan?won(plan):'-'}</td><th>행사 순비용<div style="font-weight:400;font-size:7.5pt">(지출 − 수입)</div></th><td class="n">${won(net)}</td><th>잔 액</th><td class="n">${plan?won(plan-net):'-'}</td></tr></table>
+    <table class="rt"><colgroup>${(A?[7,20,47,13,13]:[6,12,17,39,13,13]).map(w=>`<col style="width:${w}%">`).join('')}</colgroup>
+    <tr><th>No.</th>${A?'':'<th>날짜</th>'}<th>적요</th><th>내용</th><th>수입</th><th>지출</th></tr>${tr}
+    <tr class="sum"><td colspan="${A?3:4}" class="c">합 계</td><td class="n">${won(ti)}</td><td class="n">${won(te)}</td></tr></table>
+    <div class="evsec">■ 정산받을 계좌정보</div>
+    <table class="rt"><colgroup><col style="width:22%"><col style="width:34%"><col style="width:20%"><col style="width:24%"></colgroup><tr><th>은행</th><th>계좌번호</th><th>예금주</th><th>금액</th></tr>${payTr}</table>
+    <div class="rnote">(단위: 원, 승인·지급 기준) 행사 회계: ${esc(ev.manager_id?pn(ev.manager_id):'-')} · 상태: ${ev.status==='closed'?'마감':'진행 중'}${card?` · 청년부 체크카드 결제 ${won(card)}원은 총괄계좌에서 이미 출금되어 정산 금액에서 뺐습니다.`:''}</div></div>`);
+    // 영수증 첨부: 지출 순번대로 장당 4개
+    const rc=list.filter(x=>x.kind==='expense').flatMap(x=>x.rs.map((r,j)=>({no:x.rs.length>1?`${x.no}-${j+1}`:String(x.no),ac:x.ac,amt:+r.amount,img:urls[r.ref_id]||'',has:!!r.receipt_path})));
+    for(let i=0;i<rc.length;i+=4){
+      const q=rc.slice(i,i+4);while(q.length<4)q.push(null);
+      pages.push(`<div class="pg rcpg"><div class="rch">${esc(ev.name)} — 영수증 첨부${rc.length>4?` (${i/4+1}/${Math.ceil(rc.length/4)})`:''}</div><div class="rcgrid">${q.map(x=>x?`<div class="rcc"><table><colgroup><col style="width:22%"><col style="width:44%"><col style="width:34%"></colgroup><tr><th>번호</th><th>적요</th><th>금액</th></tr><tr><td>${esc(x.no)}</td><td>${esc(x.ac)}</td><td>${won(x.amt)}원</td></tr></table><div class="ri">${x.img?`<img src="${esc(x.img)}">`:`<span>${x.has?'영수증을 불러오지 못했습니다':'영수증 없음'}</span>`}</div></div>`:'<div></div>').join('')}</div></div>`);
+    }
+  }
+  printPages(EVCSS+pages.join(''),{res:true,title:`${S.year} 행사 정산 (${mode==='acct'?'적요별':'내역별'})`});
 }
-// 행사 등록·설정
+// 행사 등록·수정 (행사개요 수정: 마감/다시 열기·삭제도 여기서)
 function eventModal(ev){
   const cb=allowedCombos();if(ev&&!cb.some(x=>x.category_id===ev.category_id))cb.push({category_id:ev.category_id});
   if(!cb.length)return toast('행사를 등록할 수 있는 항이 없습니다. (그 항 담당 회계·관리자)',true);
   const ppl=S.profiles.filter(p=>(p.role==='accountant'||p.role==='admin')&&(p.active!==false||p.user_id===ev?.manager_id)).sort((a,b)=>String(a.display_name).localeCompare(b.display_name,'ko'));
   const c0=ev?.category_id??(cb.find(x=>/행사/.test(cn(x.category_id)))||cb[0]).category_id;
-  const m=modal(`<h3>${ev?'행사 설정':'행사 등록'}</h3>
+  const m=modal(`<h3>${ev?'행사개요 수정':'행사 등록'}</h3>
   <div class="grid2"><div class="field"><label>행사 이름 <span class="req">*</span></label><input id="vn" value="${esc(ev?.name||'')}" placeholder="예: 소나축" maxlength="60"></div>
   <div class="field"><label>자동 매핑 키워드 (쉼표로 구분)</label><input id="vk" value="${esc((ev?.keywords||[]).join(', '))}" placeholder="예: 소망나눔축제, 나눔축제"></div></div>
   <p class="note" style="margin-top:-4px">지출 신청 「내용」에 행사 이름이나 키워드가 있으면 이 행사와 항·목이 자동으로 골라집니다. 짧고 부르기 쉬운 이름(예: 소나축)을 추천합니다.</p>
@@ -804,8 +864,10 @@ function eventModal(ev){
   <div class="grid2"><div class="field"><label>행사 회계 <span class="note">(선택: 이 행사 지출 승인·지급 가능)</span></label><select id="vm"><option value="">(지정 안 함 — 항 담당 회계가 처리)</option>${ppl.map(p=>`<option value="${p.user_id}" ${p.user_id===ev?.manager_id?'selected':''}>${esc(p.display_name)}</option>`).join('')}</select></div>
   <div class="field"><label>계획 예산(원)</label><input id="vp" class="amt" type="text" inputmode="numeric" autocomplete="off" value="${ev?.plan_amount||''}"></div></div>
   <div class="grid2"><div class="field"><label>시작일</label><input id="vsd" type="date" value="${ev?.start_date||''}"></div><div class="field"><label>끝나는 날</label><input id="ved" type="date" value="${ev?.end_date||''}"></div></div>
-  <div class="field"><label>비고</label><input id="vno" value="${esc(ev?.note||'')}"></div>
-  <div class="actions"><button class="btn btn-ghost" id="vx">닫기</button><button class="btn btn-primary" id="vok">저장</button></div>`);
+  <div class="field"><label>주제 <span class="note">(행사 지결서 「행사개요」에 들어감)</span></label><input id="vsj" value="${esc(ev?.subject||'')}" maxlength="200" placeholder="예: 팀사역 나눔 및 친목"></div>
+  <div class="field"><label>비고</label><input id="vno" value="${esc(ev?.note||'')}" maxlength="300" placeholder="예: 참가 인원 9명(리더 1명)"></div>
+  <div class="actions" style="justify-content:space-between;flex-wrap:wrap;gap:6px"><div style="display:flex;gap:6px">${ev?`<button class="btn btn-ghost" id="vst">${ev.status==='open'?'마감 (신청 받지 않음)':'다시 열기'}</button><button class="btn btn-danger" id="vdel">행사 삭제</button>`:''}</div>
+  <div style="display:flex;gap:6px"><button class="btn btn-ghost" id="vx">닫기</button><button class="btn btn-primary" id="vok">저장</button></div></div>`);
   const q=x=>m.querySelector(x);
   const fi=()=>{const its=S.items.filter(i=>i.category_id===+q('#vc').value&&(i.active||i.id===ev?.item_id));
     q('#vi').innerHTML='<option value="">(목 없음)</option>'+its.map(i=>`<option value="${i.id}" ${i.id===ev?.item_id?'selected':''}>${esc(i.name)}</option>`).join('')+'<option value="new">＋ 새 목 만들기…</option>';
@@ -813,23 +875,27 @@ function eventModal(ev){
   const sw=()=>{q('#vni').style.display=q('#vi').value==='new'?'':'none'};
   q('#vc').onchange=fi;q('#vi').onchange=sw;fi();
   q('#vx').onclick=()=>m.remove();
+  if(ev){q('#vst').onclick=()=>{m.remove();evAct(ev.status==='open'?'evclose':'evreopen',ev.id)};q('#vdel').onclick=()=>{m.remove();evAct('evdel',ev.id)}}
   q('#vok').onclick=async()=>{const isNew=q('#vi').value==='new';if(isNew&&!q('#vni').value.trim())return toast('새 목 이름을 입력하세요.',true);
     try{const id=await rpc('save_event',{p_id:ev?.id??null,p_year:ev?.fiscal_year??S.year,p_cat:+q('#vc').value,p_item:isNew||!q('#vi').value?null:+q('#vi').value,p_new_item:isNew?q('#vni').value.trim():null,
       p_name:q('#vn').value,p_keywords:q('#vk').value.split(',').map(x=>x.trim()).filter(Boolean),p_manager:q('#vm').value||null,
-      p_start:q('#vsd').value||null,p_end:q('#ved').value||null,p_plan:+q('#vp').value||0,p_note:q('#vno').value});
+      p_start:q('#vsd').value||null,p_end:q('#ved').value||null,p_plan:+q('#vp').value||0,p_note:q('#vno').value,p_subject:q('#vsj').value});
     m.remove();toast('저장했습니다.'+(isNew?' 새 목도 만들어져 지출 신청에서 바로 쓸 수 있습니다.':''));S.evId=id;await loadStatic();await loadYear();renderTabs();render()}catch(_){}};
 }
 async function evAct(a,id){
   const cur=()=>evById(S.evId);
   try{
     if(a==='evnew')return eventModal(null);
-    if(a==='evopen'){S.evId=+id;return render()}
+    if(a==='evopen'){S.evId=+id;render();return window.scrollTo(0,0)}
     if(a==='evback'){S.evId=null;return render()}
     if(a==='evset')return eventModal(cur());
-    if(a==='evinc'){S.incEv=S.evId;S.tab='income';renderTabs();return render()}
-    if(a==='evprres')return printResolutions(evExp(cur()).filter(e=>e.status!=='requested').sort((x,y)=>x.expense_date<y.expense_date?-1:1).map(resOf));
-    if(a==='evapx')return printEventAppendix();
-    if(a==='evapx1')return printEventAppendix(S.evId);
+    if(a==='evprsel'){const ids=[...document.querySelectorAll('.evck:checked')].map(c=>+c.value);
+      if(!ids.length)return toast('아래 지출내역을 체크해 주세요',true);
+      return printResolutions(S.expenses.filter(e=>ids.includes(e.id)).sort((x,y)=>x.expense_date<y.expense_date?-1:x.expense_date>y.expense_date?1:x.id-y.id).map(resOf))}
+    if(a==='evapx')return printEventSettle(null,'row');
+    if(a==='evapxa')return printEventSettle(null,'acct');
+    if(a==='evapx1')return printEventSettle(S.evId,'row');
+    if(a==='evapxa1')return printEventSettle(S.evId,'acct');
     if(a==='evclose'){if(!confirm('이 행사를 마감할까요?\n\n마감하면 지출 신청 화면에서 이 행사를 고를 수 없습니다. (다시 열 수 있음)'))return;await rpc('set_event_status',{p_event:S.evId,p_open:false});toast('마감했습니다.')}
     if(a==='evreopen'){await rpc('set_event_status',{p_event:S.evId,p_open:true});toast('다시 열었습니다.')}
     if(a==='evdel'){const ev=cur();if(!confirm(`'${ev.name}' 행사를 삭제할까요?\n\n이 행사로 신청된 지출·수입이 있으면 삭제되지 않습니다. 되돌릴 수 없습니다.`))return;await rpc('delete_event',{p_event:ev.id});S.evId=null;toast('삭제했습니다.')}
@@ -980,7 +1046,7 @@ function printClaim(id){
 function renderIncome(){
   const evs=(S.events||[]).filter(e=>e.status==='open'||e.id===S.incEv),e0=S.incEv;S.incEv=null;
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>수입 등록</h3></div><div class="card-body">
-  <p class="note">청구 없이 들어온 이월금·헌금·행사 회비·후원금 등을 직접 등록합니다. 선택한 계좌의 입금 내역으로 기록되며, 수입 항·목은 [설정-수입 계정항목], 적요는 [설정-지출 계정항목]의 「수입 적요」에서 관리합니다. 행사 수입은 행사를 고르면 「행사 정산 부록」에 함께 정리됩니다.</p>
+  <p class="note">청구 없이 들어온 이월금·헌금·행사 회비·후원금 등을 직접 등록합니다. 선택한 계좌의 입금 내역으로 기록되며, 수입 항·목은 [설정-수입 계정항목], 적요는 [설정-지출 계정항목]의 「수입 적요」에서 관리합니다. 행사 수입은 행사를 고르면 「행사 정산」(행사 지결서)에 함께 정리됩니다.</p>
   <div class="grid2"><div class="field"><label>입금 계좌</label><select id="ia">${acctOpts()}</select></div><div class="field"><label>입금일</label><input id="id" type="date" value="${TODAY()}"></div></div>
   <div class="field"><label>내용</label><input id="ides" maxlength="100" placeholder="(예시) 소나축-회비 홍길동"><div id="imap" class="hint"></div></div>
   <div class="grid2"><div class="field"><label>행사 <span class="note">(행사 수입이면 선택)</span></label><select id="iev"><option value="">(행사 아님)</option>${evs.map(e=>`<option value="${e.id}" ${e.id===e0?'selected':''}>${esc(e.name)}</option>`).join('')}</select></div>
@@ -1442,7 +1508,7 @@ async function renderSettle(){
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${y}년 수지결산보고서</h3></div><div class="card-body">
    ${deptBar('<span style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">'+[1,2,3,4].map(q=>`<label><input type="checkbox" class="qchk" value="${q}" ${qs.includes(q)?'checked':''}> ${q}분기(${3*q-2}~${3*q}월)</label>`).join('')+'</span>')}
    <p class="note">체크한 분기의 누계입니다. 전년 금액(A)은 전년도 같은 분기의 실적, 예산(B)은 연간 예산입니다. 이월금은 분기와 관계없이 포함됩니다.</p>
-   <div style="display:flex;gap:6px;margin:8px 0"><button class="btn btn-ghost btn-sm" id="spr">인쇄</button><button class="btn btn-ghost btn-sm" id="sxl">엑셀</button><button class="btn btn-ghost btn-sm" data-act="evapx">행사 정산 부록</button></div></div><div class="tblwrap">${mHTML(m,true)}</div></div>`;
+   <div style="display:flex;gap:6px;margin:8px 0"><button class="btn btn-ghost btn-sm" id="spr">인쇄</button><button class="btn btn-ghost btn-sm" id="sxl">엑셀</button><button class="btn btn-ghost btn-sm" data-act="evapx">행사 정산 (내역별)</button></div></div><div class="tblwrap">${mHTML(m,true)}</div></div>`;
   wireDept(renderSettle);
   document.querySelectorAll('.qchk').forEach(c=>c.onchange=()=>{const v=[...document.querySelectorAll('.qchk:checked')].map(x=>+x.value);if(!v.length){c.checked=true;return toast('분기를 하나 이상 선택하세요.',true)}S.qs=v;renderSettle()});
   $('#spr').onclick=()=>printPages(mHTML(m),{land:true,fit:true,title:`${y} 수지결산보고서`});
