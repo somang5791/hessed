@@ -1151,53 +1151,54 @@ function printClaim(id){
 function renderIncome(){
   const e0=S.incEv;S.incEv=null;
   const step=(n,t)=>`<div style="font-size:12px;font-weight:800;color:var(--blue);margin:14px 0 6px">${n}. ${t}</div>`;
+  const ecats=S.cats.filter(c=>c.active),icats=(S.incCats||[]).filter(c=>c.active&&c.sys!=='fund');
   $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>수입 등록</h3></div><div class="card-body">
-  <p class="note">교회에서 받은 예산 · 이월금 · 헌금 · 행사 회비 · 후원금 등 들어온 돈을 등록합니다. 내용을 「소나축-예산」처럼 쓰면 예산 계정(항·목)과 행사가 자동으로 골라지고, 아래에 남은 예산이 보입니다.</p>
+  <p class="note">교회에서 받은 예산(지원금)은 <b>예산 계정</b>으로, 회비·헌금·이월금 등은 <b>수입 항목</b>으로 등록합니다. 내용을 「소나축-예산」, 「소나축-회비 홍길동」처럼 쓰면 계정과 행사가 자동으로 골라집니다.</p>
   ${step(1,'입금 계좌 · 입금일')}<div class="grid2"><div class="field"><label>입금 계좌</label><select id="ia">${acctOpts()}</select></div><div class="field"><label>입금일</label><input id="id" type="date" value="${TODAY()}"></div></div>
-  ${step(2,'계정 · 내용')}<div class="aplbl">예산 계정 <span class="note">(아래 내용을 쓰면 자동으로 골라집니다 · 예산이 아닌 수입이면 「예산 아님」)</span></div>
-  <div class="apline"><div class="field"><label>항</label><select id="ibc"><option value="">(예산 아님)</option>${S.cats.filter(c=>c.active).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
-    <div class="field"><label>목</label><select id="ibi"></select></div>
-    <div class="field" id="ibeW" style="display:none"><label>행사</label><select id="ibe"></select></div><div id="ibeH" class="hint"></div></div>
+  ${step(2,'계정 · 내용')}<div class="aplbl">계정 <span class="note">(아래 내용을 쓰면 자동으로 골라집니다 · 바로 바꿀 수 있어요)</span></div>
+  <div class="apline"><div class="field"><label>항</label><select id="ixc"><option value="">(선택)</option>
+      <optgroup label="예산 (교회 지원금 → 지출 계정)">${ecats.map(c=>`<option value="e${c.id}">${esc(c.name)}</option>`).join('')}</optgroup>
+      <optgroup label="그 밖의 수입">${icats.map(c=>`<option value="i${c.id}">${esc(c.name)}</option>`).join('')}</optgroup></select></div>
+    <div class="field"><label>목</label><select id="ixi"></select></div>
+    <div class="field" id="ixeW" style="display:none"><label>행사</label><select id="ixe"></select></div><div id="ixH" class="hint"></div></div>
   <div class="field"><label>내용 <span class="req">*</span></label><input id="ides" maxlength="100" placeholder="(예시) 소나축-예산 / 소나축-회비 홍길동"><div id="imap" class="hint"></div></div>
-  <div class="grid3"><div class="field"><label>수입 항</label><select id="ic">${S.incCats.filter(c=>c.active).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join('')}</select></div>
-  <div class="field"><label>수입 목</label><select id="ii"></select></div>
-  <div class="field"><label>적요</label><select id="iac"><option value="">(없음)</option>${sacc('in').filter(x=>x.active).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div></div>
   ${step(3,'금액')}<div class="field"><label>금액(원) <span class="req">*</span></label><input id="iam" class="amt" type="text" inputmode="numeric" autocomplete="off"><div id="ibal" class="hint"></div></div>
   <button class="btn btn-primary" id="ibtn">등록</button></div></div>`;
   const q=id=>$('#'+id);
-  const fi=()=>{const its=S.incItems.filter(i=>i.active&&i.category_id===+q('ic').value);q('ii').innerHTML='<option value="">(목 없음)</option>'+its.map(i=>`<option value="${i.id}">${esc(i.name)}</option>`).join('')};q('ic').onchange=fi;fi();
-  // 예산 계정: 항 → 목 → 행사(목에 행사가 있으면 자동 연결, 여러 개면 고르기)
-  const fillI=sel=>{const c=+q('ibc').value,its=c?S.items.filter(i=>i.category_id===c&&i.active):[];q('ibi').innerHTML=c?'<option value="">(목 없음)</option>'+its.map(i=>`<option value="${i.id}" ${i.id===sel?'selected':''}>${esc(i.name)}</option>`).join(''):'<option value=""></option>';q('ibi').disabled=!c};
-  const evsFor=()=>{const c=+q('ibc').value,i=q('ibi').value?+q('ibi').value:null;return c?(S.events||[]).filter(e=>e.category_id===c&&(e.item_id??null)===i&&e.status==='open'):[]};
-  const syncE=want=>{const L=evsFor(),w=q('ibeW'),h=q('ibeH');
-    if(!L.length){q('ibe').innerHTML='';w.style.display='none';h.textContent='';return}
-    const cur=want!==undefined?want:(+q('ibe').value||null),pick=cur&&L.some(e=>e.id===cur)?cur:L.length===1?L[0].id:null;
-    q('ibe').innerHTML='<option value="">(행사 아님)</option>'+L.map(e=>`<option value="${e.id}" ${e.id===pick?'selected':''}>${esc(e.name)}</option>`).join('');
-    w.style.display='';h.innerHTML=q('ibe').value?`🎪 <b>${esc(evNm(+q('ibe').value))}</b> 행사 정산에도 들어갑니다`:''};
-  // 예산 안내: 목 예산(예산 수립)이 있으면 목 기준, 없으면 항 예산 기준
-  const bal=()=>{const c=+q('ibc').value,i=q('ibi').value?+q('ibi').value:null,a=+q('iam').value||0,h=q('ibal');if(!c){h.innerHTML='';return}
+  const mode=()=>(q('ixc').value||'')[0]||'',cid=()=>+(q('ixc').value||'').slice(1)||0,iid=()=>q('ixi').value?+q('ixi').value:null;
+  const fillI=sel=>{const m=mode(),c=cid();let its=[];if(m==='e')its=S.items.filter(i=>i.category_id===c&&i.active);if(m==='i')its=(S.incItems||[]).filter(i=>i.category_id===c&&i.active);
+    q('ixi').innerHTML=m?'<option value="">(목 없음)</option>'+its.map(i=>`<option value="${i.id}" ${i.id===sel?'selected':''}>${esc(i.name)}</option>`).join(''):'<option value=""></option>';q('ixi').disabled=!m};
+  // 행사: 예산 계정이면 그 목의 행사(1개면 자동), 그 밖의 수입이면 진행 중인 모든 행사 중 선택(회비 등)
+  const evsFor=()=>{const m=mode();if(m==='e'){const c=cid(),i=iid();return (S.events||[]).filter(e=>e.category_id===c&&(e.item_id??null)===i&&e.status==='open')}return m==='i'?(S.events||[]).filter(e=>e.status==='open'):[]};
+  const syncE=want=>{const L=evsFor(),w=q('ixeW'),h=q('ixH');
+    if(!L.length){q('ixe').innerHTML='';w.style.display='none';h.textContent=mode()==='e'?'💰 예산(교회 지원금)으로 등록됩니다':'';return}
+    const cur=want!==undefined?want:(+q('ixe').value||null),pick=cur&&L.some(e=>e.id===cur)?cur:(mode()==='e'&&L.length===1?L[0].id:null);
+    q('ixe').innerHTML='<option value="">(행사 아님)</option>'+L.map(e=>`<option value="${e.id}" ${e.id===pick?'selected':''}>${esc(e.name)}</option>`).join('');
+    w.style.display='';h.innerHTML=(mode()==='e'?'💰 예산(교회 지원금)으로 등록됩니다':'')+(q('ixe').value?`${mode()==='e'?' · ':''}🎪 <b>${esc(evNm(+q('ixe').value))}</b> 행사 정산에도 들어갑니다`:'')};
+  // 예산 안내(예산 계정일 때만): 목 예산이 있으면 목 기준, 없으면 항 기준
+  const bal=()=>{const h=q('ibal');if(mode()!=='e'){h.innerHTML='';return}const c=cid(),i=iid(),a=+q('iam').value||0;
     const recv=(fc,fi)=>sum((S.tx||[]).filter(t=>t.kind==='in'&&!t.deleted_at&&(t.source==='income'||t.source==='fund_request')&&t.category_id===fc&&(fi==null||t.item_id===fi)),'amount');
     const bi=i?sum((S.lines||[]).filter(l=>l.kind==='expense'&&l.category_id===c&&l.item_id===i),'amt_d'):0;
     let nm,b,r;if(i&&bi){nm=inm(i);b=bi;r=recv(c,i)}else{nm=cn(c);b=+(S.summary.find(x=>x.category_id===c&&memb(MD()).includes(x.dept_id))?.budget||0);r=recv(c,null)}
     const left=b-r-a;
     h.innerHTML=`<b>${esc(nm)}</b> 예산 ${won(b)}원 · 지금까지 받은 금액 ${won(r)}원 → ${a?'이번에 받으면':'현재'} 남은 예산 <b class="${left<0?'neg':''}">${won(left)}원</b>${left<0?' ⚠ 예산보다 많이 받습니다':''}${!b?' <span class="note">(예산이 아직 정해지지 않았어요)</span>':''}`};
-  q('ibc').onchange=()=>{fillI();syncE(null);bal()};q('ibi').onchange=()=>{syncE(null);bal()};q('ibe').onchange=()=>syncE();q('iam').oninput=bal;
-  fillI();
-  if(e0){const ev=(S.events||[]).find(e=>e.id===e0);if(ev){q('ibc').value=ev.category_id;fillI(ev.item_id);syncE(ev.id)}}
-  // 내용 → 예산 계정·행사·수입 항목·적요 자동 선택
+  const setAcct=(v,item,ev)=>{q('ixc').value=v;fillI(item);syncE(ev);bal()};
+  q('ixc').onchange=()=>setAcct(q('ixc').value,null,null);q('ixi').onchange=()=>{syncE(null);bal()};q('ixe').onchange=()=>syncE();q('iam').oninput=bal;
+  fillI();syncE(null);
+  if(e0){const ev=(S.events||[]).find(e=>e.id===e0);if(ev)setAcct('e'+ev.category_id,ev.item_id,ev.id)}
+  // 내용 → 계정 자동: 수입 항목 이름(회비·헌금·이월금…)이 있으면 그 수입 항목, 아니면 지출 계정(예산). 「예산·지원」이 들어가면 예산 우선
   const hasW=(t,w)=>w&&t.replace(/\s/g,'').includes(String(w).replace(/\s/g,''));
-  let tm;q('ides').oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>{const d=q('ides').value,mo=autoAcct(d,S.year,'out'),mi=autoAcct(d,S.year,'in'),t=[];
-    const ev=mo.ev,it=ev?null:mo.it;
-    if(ev){q('ibc').value=ev.category_id;fillI(ev.item_id);syncE(ev.id);t.push('예산 계정 '+cn(ev.category_id)+(ev.item_id?' › '+inm(ev.item_id):''),'행사 '+ev.name)}
-    else if(it){q('ibc').value=it.category_id;fillI(it.id);syncE(null);t.push('예산 계정 '+cn(it.category_id)+' › '+it.name)}
-    const ii=S.incItems.find(x=>x.active&&hasW(d,x.name)),ic=ii?S.incCats.find(c=>c.id===ii.category_id):S.incCats.find(c=>c.active&&hasW(d,c.name));
-    if(ic){q('ic').value=ic.id;fi();if(ii)q('ii').value=ii.id;t.push('수입 '+ic.name+(ii?' › '+ii.name:''))}
-    if(mi.ac){q('iac').value=mi.ac.id;t.push('적요 '+mi.ac.name)}
-    q('imap').textContent=t.length?'자동 선택: '+t.join(' · '):'';bal()},250)};
+  let tm;q('ides').oninput=()=>{clearTimeout(tm);tm=setTimeout(()=>{const d=q('ides').value,mo=autoAcct(d,S.year,'out'),ev=mo.ev,it=ev?null:mo.it;
+    const ii=(S.incItems||[]).find(x=>x.active&&hasW(d,x.name)&&icats.some(c=>c.id===x.category_id)),ic=ii?icats.find(c=>c.id===ii.category_id):icats.find(c=>hasW(d,c.name));
+    const budgetWord=/예산|지원/.test(d);
+    if((ev||it)&&(budgetWord||!ic)){if(ev)setAcct('e'+ev.category_id,ev.item_id,ev.id);else setAcct('e'+it.category_id,it.id,null);
+      q('imap').textContent=`자동 선택: 예산 · ${cn(ev?ev.category_id:it.category_id)}${(ev?ev.item_id:it.id)?' › '+inm(ev?ev.item_id:it.id):''}${ev?' · 행사 '+ev.name:''}`}
+    else if(ic){setAcct('i'+ic.id,ii?.id||null,ev?ev.id:null);q('imap').textContent=`자동 선택: ${ic.name}${ii?' › '+ii.name:''}${ev?' · 행사 '+ev.name:''}`}
+    else q('imap').textContent=''},250)};
   bal();
-  q('ibtn').onclick=async()=>{const c=q('ibc').value?+q('ibc').value:null;
-    try{await rpc('register_income',{p_year:S.year,p_account:+q('ia').value,p_inc_cat:+q('ic').value,p_inc_item:q('ii').value?+q('ii').value:null,p_amount:+q('iam').value,p_date:q('id').value,p_desc:q('ides').value,
-      p_acct:q('iac').value?+q('iac').value:null,p_event:q('ibe').value?+q('ibe').value:null,p_cat:c,p_item:c&&q('ibi').value?+q('ibi').value:null});
+  q('ibtn').onclick=async()=>{const m=mode(),c=cid(),i=iid(),ev=q('ixe').value?+q('ixe').value:null;if(!m)return toast('계정을 선택하세요.',true);
+    try{await rpc('register_income',{p_year:S.year,p_account:+q('ia').value,p_inc_cat:m==='i'?c:null,p_inc_item:m==='i'?i:null,p_amount:+q('iam').value,p_date:q('id').value,p_desc:q('ides').value,
+      p_acct:null,p_event:ev,p_cat:m==='e'?c:null,p_item:m==='e'?i:null});
       toast('등록했습니다.');await loadStatic();await loadYear();renderTabs();render()}catch(_){}};
 }
 function txTable(rows,withBal){
