@@ -82,6 +82,11 @@ main{max-width:1200px;margin:0 auto;padding:20px 16px 60px}
 .lvbox{display:flex;gap:8px;flex-wrap:wrap}.lvbox label{display:flex!important;align-items:center;gap:5px;padding:5px 11px;border:2px solid var(--rule);border-radius:16px;cursor:pointer;font-weight:600!important}.lvbox input{width:auto;margin:0}
 .lv{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;color:#fff;vertical-align:middle}.lv-red{background:#c0392b}.lv-yellow{background:#d4a017}.lv-green{background:#2e7d32}
 .sigthumb{height:30px;max-width:80px;object-fit:contain;border:1px dashed #bbb;background:#fff}
+.optchk{display:inline-flex;align-items:center;gap:6px;font-size:13px;margin:2px 14px 8px 0;cursor:pointer}
+.apsum{background:var(--paper);border:1px solid var(--rule);border-radius:8px;padding:8px 10px;display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13px;margin:0 0 8px}
+.todo-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:12px}
+.todo-t{background:#fff;border:1px solid var(--rule);border-radius:10px;padding:12px 14px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:2px;font:inherit;color:inherit}
+.todo-t b{font-size:22px}.todo-t.on{border:2px solid var(--blue)}.todo-t.warn{border:2px solid var(--red)}.todo-t.warn b{color:var(--red)}
 </style>
 </head>
 <body>
@@ -158,8 +163,7 @@ async function boot(){
   if(!p||!p.active){await sb.auth.signOut();$('#login').style.display='block';return toast('사용할 수 없는 계정입니다. 관리자에게 문의하세요.',true)}
   S.me=p;$('#login').style.display='none';$('#app').style.display='block';
   $('#who').textContent=`${p.display_name} · ${ROLE[p.role]}`;
-  S.tab='req';await loadStatic();await loadYear();renderTabs();render();
-  if(isMoney()&&S.pay.length)payPopup();
+  S.tab=isMoney()?'todo':'req';await loadStatic();await loadYear();renderTabs();render();
   annPopup();retentionPopup();
 }
 async function loadStatic(){
@@ -185,7 +189,7 @@ async function loadYear(){
     sb.from('budget_adjustments').select('*').eq('fiscal_year',y),
     sb.from('budget_lines').select('*').eq('fiscal_year',y)]);
   S.summary=sm.data||[];S.expenses=ex.data||[];S.borrows=bo.data||[];S.budgets=bu.data||[];S.adjust=ad.data||[];S.lines=bl.data||[];
-  {const ev=await sb.from('events').select('*').eq('fiscal_year',y).order('id');S.events=ev.data||[];const ids=S.events.map(e=>e.id);
+  {const ev=await sb.from('events').select('*').in('fiscal_year',[y-1,y,y+1]).order('id');S.evAll=ev.data||[];S.events=S.evAll.filter(e=>e.fiscal_year===y);const ids=S.events.map(e=>e.id);
    if(ids.length){const [c,t]=await Promise.all([sb.from('event_cats').select('*').in('event_id',ids),sb.from('event_tx').select('*').in('event_id',ids)]);S.evCats=c.data||[];S.evTx=t.data||[]}else{S.evCats=[];S.evTx=[]}}
   S.pay=[];S.funds=[];S.tx=[];if(isMoney()){const [pp,f,t]=await Promise.all([sb.rpc('pending_payouts'),sb.from('fund_requests').select('*').eq('fiscal_year',y).order('id',{ascending:false}),sb.from('account_tx').select('*').eq('fiscal_year',y).order('tx_date',{ascending:false}).order('id',{ascending:false})]);S.pay=pp.data||[];S.funds=f.data||[];S.tx=t.data||[]}
   const fy=S.years.find(v=>v.year===y);$('#lockInfo').innerHTML=fy?.locked?'<span class="lockbadge" title="마감된 연도">🔒<span class="lktxt"> 마감됨</span></span>':'';
@@ -289,7 +293,7 @@ const snm=id=>(S.subs||[]).find(x=>x.id===id)?.name||'', subsFor=it=>(S.subs||[]
 const MD=()=>(S.depts.slice().sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id)[0]||{}).id;
 const sacc=k=>(S.sacc||[]).filter(x=>x.kind===k).sort((a,b)=>a.sort_order-b.sort_order||a.id-b.id);
 const acNm=id=>(S.sacc||[]).find(x=>x.id===id)?.name||'';
-const evNm=id=>(S.events||[]).find(x=>x.id===id)?.name||'';
+const evNm=id=>(S.evAll||S.events||[]).find(x=>x.id===id)?.name||'';
 // 담당 항 (청구·차용·행사 만들기용). 관리자는 전체
 function allowedCombos(){const md=MD();return S.cats.filter(c=>c.active&&(isAdmin()||myScopes().some(s=>s.category_id===c.id))).map(c=>({dept_id:md,category_id:c.id}))}
 function itemsFor(d,c){return S.items.filter(i=>i.active&&i.category_id===+c)}
@@ -299,34 +303,42 @@ const mnorm=t=>String(t||'').toLowerCase().replace(/\s+/g,'');
 function autoAcct(text,year,kind){
   const t=mnorm(text);if(!t)return {};
   const best=(list,keys)=>{let b=null,bl=0;list.forEach(x=>keys(x).map(mnorm).filter(k=>k.length>=2).forEach(k=>{if(t.includes(k)&&k.length>bl){bl=k.length;b=x}}));return b};
-  const evs=(S.events||[]).filter(e=>e.status==='open'&&e.fiscal_year===year);
-  let ev=best(evs,e=>[e.name,...(e.keywords||[])]),it=null;
+  const EA=S.evAll||S.events||[],evs=EA.filter(e=>e.status==='open'&&e.fiscal_year===year),ek=e=>[e.name,...(e.keywords||[])];
+  let ev=best(evs,ek),it=null,evMiss=null;
+  if(!ev){const x=best(EA,ek);if(x)evMiss=x.status!=='open'?`'${x.name}' 행사는 마감되어 고를 수 없습니다. [행사]에서 「행사개요 수정 › 다시 열기」를 해 주세요.`:`'${x.name}' 행사는 ${x.fiscal_year}년 행사라 ${year}년 지출에는 고를 수 없습니다. 지출일을 확인해 주세요.`}
   if(ev)it=S.items.find(i=>i.id===ev.item_id)||null;
   else{it=best(S.items.filter(i=>i.active&&S.cats.some(c=>c.id===i.category_id&&c.active)),i=>[i.name,...(i.keywords||[])]);
     if(it){const es=evs.filter(e=>e.item_id===it.id);if(es.length===1)ev=es[0]}}
   const ac=best(sacc(kind||'out').filter(x=>x.active),x=>[x.name,...(x.keywords||[])]);
-  return {ev,it,ac}}
-// 계정 선택 칸: 행사 · 항 · 목 · 적요
-function apHTML(p){return `<div class="grid2"><div class="field"><label>행사 <span class="note">(행사 지출이면 선택)</span></label><select id="${p}e"></select></div><div class="field"><label>항 <span class="req">*</span></label><select id="${p}c"></select></div></div>
-  <div class="grid2"><div class="field"><label>목</label><select id="${p}i"></select></div><div class="field"><label>적요(계정) <span class="req">*</span></label><select id="${p}a"></select></div></div>`}
+  return {ev,it,ac,evMiss}}
+// 계정 선택 칸: 항 · 목 · 적요 (+ 행사는 목에서 자동: 0개 없음 / 1개 자동 연결 / 2개 이상이면 그때만 고르기)
+function apHTML(p){return `<div class="grid2"><div class="field"><label>항 <span class="req">*</span></label><select id="${p}c"></select></div><div class="field"><label>목</label><select id="${p}i"></select></div></div>
+  <div class="grid2"><div class="field"><label>적요(계정) <span class="req">*</span></label><select id="${p}a"></select></div><div class="field" id="${p}eW" style="display:none"><label>행사 <span class="req">*</span> <span class="note">(이 목의 행사 중 선택)</span></label><select id="${p}e"></select></div></div>
+  <div id="${p}eH" class="hint" style="margin:-4px 0 8px"></div>`}
 function apWire(root,p,v,year,onUser){
   const q=x=>root.querySelector('#'+p+x);v=v||{};
-  const evs=()=>(S.events||[]).filter(e=>e.fiscal_year===year()&&(e.status==='open'||e.id===v.event_id));
-  const fillE=()=>{const cur=+q('e').value||null;q('e').innerHTML='<option value="">(행사 아님)</option>'+evs().map(e=>`<option value="${e.id}" ${e.id===cur?'selected':''}>${esc(e.name)}${e.status!=='open'?' (마감)':''}</option>`).join('')};
+  const evsFor=()=>{const c=+q('c').value,i=q('i').value?+q('i').value:null;
+    return (S.evAll||S.events||[]).filter(e=>e.fiscal_year===year()&&e.category_id===c&&(e.item_id??null)===i&&(e.status==='open'||e.id===v.event_id))};
+  const syncE=want=>{const L=evsFor(),cur=want!==undefined?want:(+q('e').value||null),w=q('eW'),h=q('eH');
+    if(!L.length){q('e').innerHTML='<option value=""></option>';w.style.display='none';h.textContent='';return}
+    if(L.length===1){q('e').innerHTML=`<option value="${L[0].id}" selected>${esc(L[0].name)}</option>`;w.style.display='none';
+      h.innerHTML=`🎪 <b>${esc(L[0].name)}</b> 행사로 등록됩니다${L[0].status!=='open'?' (마감된 행사)':''}`;return}
+    q('e').innerHTML='<option value="">(행사 선택)</option>'+L.map(e=>`<option value="${e.id}" ${e.id===cur?'selected':''}>${esc(e.name)}${e.status!=='open'?' (마감)':''}</option>`).join('');
+    w.style.display='';h.innerHTML=q('e').value?'':'<span class="neg">이 목에는 행사가 여러 개입니다. 어느 행사인지 골라 주세요.</span>'};
   const cats=()=>{const cs=reqCats();if(v.category_id&&!cs.some(c=>c.id===v.category_id)){const o=S.cats.find(c=>c.id===v.category_id);if(o)cs.push(o)}return cs};
   const fillC=sel=>{q('c').innerHTML=cats().map(c=>`<option value="${c.id}" ${c.id===sel?'selected':''}>${esc(c.name)}</option>`).join('')};
   const fillI=sel=>{const its=itemsFor(0,q('c').value);if(v.item_id&&!its.some(i=>i.id===v.item_id)){const o=S.items.find(i=>i.id===v.item_id&&i.category_id===+q('c').value);if(o)its.push(o)}
     q('i').innerHTML=(its.length?'':'<option value="">(목 없음)</option>')+its.map(i=>`<option value="${i.id}" ${i.id===sel?'selected':''}>${esc(i.name)}</option>`).join('')};
   const fillA=sel=>{const as=sacc('out').filter(x=>x.active||x.id===v.acct_id);q('a').innerHTML='<option value="">(선택)</option>'+as.map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)}</option>`).join('')};
-  const lock=()=>{const ev=(S.events||[]).find(e=>e.id===+q('e').value);q('c').disabled=!!ev;q('i').disabled=!!(ev&&ev.item_id);
-    if(ev){q('c').value=ev.category_id;fillI(ev.item_id);if(ev.item_id)q('i').value=ev.item_id}};
-  fillE();if(v.event_id)q('e').value=v.event_id;fillC(v.category_id||cats()[0]?.id);fillI(v.item_id);fillA(v.acct_id);lock();
+  fillC(v.category_id||cats()[0]?.id);fillI(v.item_id);fillA(v.acct_id);syncE(v.event_id||null);
   const u=()=>onUser&&onUser();
-  q('e').onchange=()=>{lock();u()};q('c').onchange=()=>{fillI();u()};q('i').onchange=u;q('a').onchange=u;
+  q('c').onchange=()=>{fillI();syncE(null);u()};q('i').onchange=()=>{syncE(null);u()};q('a').onchange=u;q('e').onchange=()=>{syncE();u()};
   return {
-    get:()=>({event:q('e').value?+q('e').value:null,cat:+q('c').value,item:q('i').value?+q('i').value:null,acct:q('a').value?+q('a').value:null}),
-    year:()=>{const c=q('e').value;fillE();if(c&&q('e').querySelector(`option[value="${c}"]`))q('e').value=c;lock()},
-    apply:m=>{if(m.ev){q('e').value=m.ev.id;lock()}else if(m.it){q('e').value='';lock();q('c').value=m.it.category_id;fillI(m.it.id);q('i').value=m.it.id}
+    get:()=>({event:q('e').value?+q('e').value:null,cat:+q('c').value,item:q('i').value?+q('i').value:null,acct:q('a').value?+q('a').value:null,
+      evNeed:q('eW').style.display!=='none'&&!q('e').value}),
+    year:()=>syncE(),
+    apply:m=>{const t=m.ev?{c:m.ev.category_id,i:m.ev.item_id}:m.it?{c:m.it.category_id,i:m.it.id}:null;
+      if(t){q('c').value=t.c;fillI(t.i);if(t.i)q('i').value=t.i;syncE(m.ev?m.ev.id:null)}
       if(m.ac)q('a').value=m.ac.id}};
 }
 const apText=m=>[m.ev?'행사 '+m.ev.name:'',m.ev?acctLabel(m.ev.category_id,m.ev.item_id):m.it?acctLabel(m.it.category_id,m.it.id):'',m.ac?'적요 '+m.ac.name:''].filter(Boolean).join(' · ');
@@ -339,15 +351,17 @@ function renderReq(){
   ${step(2,'영수증')}<div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"><div class="hint" style="margin-top:4px">📷 영수증 촬영 날짜가 자동으로 매핑됩니다. 당일 지출은 당일 영수증을 촬영해 주세요!</div><img id="rprev" alt="" style="display:none;max-height:140px;max-width:100%;margin-top:8px;border-radius:6px;border:1px solid var(--rule)"></div>
   ${step(3,'날짜 · 금액')}<div class="grid2"><div class="field"><label>지출일 <span class="req">*</span></label><input id="rdt" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><div id="dtHint" class="hint"></div><div id="yrHint" class="hint"></div></div>
   <div class="field"><label>영수증 금액(원) <span class="req">*</span></label><input id="ra" class="amt" type="text" inputmode="numeric" autocomplete="off"></div></div>
-  <div class="grid2"><div class="field"><label>자부담(원) <span class="note">(있을 때만 · 회비 등)</span></label><input id="rsp" class="amt" type="text" inputmode="numeric" autocomplete="off" placeholder="없으면 비워 두세요"></div>
+  <label class="optchk"><input type="checkbox" id="rspOn"> 자부담이 있어요 <span class="note">(회비 등 본인이 부담한 돈이 있을 때만)</span></label>
+  <div id="rspBox" style="display:none"><div class="grid2"><div class="field"><label>자부담(원)</label><input id="rsp" class="amt" type="text" inputmode="numeric" autocomplete="off"></div>
   <div class="field"><label>청구 금액 <span class="note">(영수증 금액 − 자부담)</span></label><div id="rclaim" style="font-size:17px;font-weight:800;padding:7px 0">0원</div></div></div>
-  <div class="field" id="rspnW" style="display:none"><label>자부담 내용</label><input id="rspn" maxlength="200" placeholder="예: 회비 1인당 27,000원 × 9명"></div>
+  <div class="field" id="rspnW" style="display:none"><label>자부담 내용</label><input id="rspn" maxlength="200" placeholder="예: 회비 1인당 27,000원 × 9명"></div></div>
   <div id="balLine" class="hint" style="margin:-4px 0 6px"></div>
   ${step(4,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="(예시) 행사이름-계정이름 / 소나축-간식비"><div id="mapHint" class="hint"></div></div>
-  ${step(5,'계정 (내용을 쓰면 행사·항·목·적요가 자동으로 골라집니다. 직접 바꿀 수 있어요)')}
-  <div id="rap">${apHTML('r')}</div>
-  <div class="field"><label>비고</label><input id="rn" maxlength="200" placeholder="자세한 내용은 여기에 작성"></div>
-  <div id="payBox">${step(6,'전도금 받을 계좌')}<div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
+  <div id="apSum" class="apsum"></div>
+  <div id="rap" style="display:none">${apHTML('r')}</div>
+  <label class="optchk"><input type="checkbox" id="rnOn"> 비고 추가</label>
+  <div class="field" id="rnW" style="display:none"><label>비고</label><input id="rn" maxlength="200" placeholder="자세한 내용은 여기에 작성"></div>
+  <div id="payBox">${step(5,'전도금 받을 계좌')}<div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
   <div class="field" id="ppickW" style="display:none"><label>최근 사용한 계좌</label><select id="ppick"></select></div>
   <div class="grid3"><div class="field"><label>예금주 <span class="req">*</span></label><input id="ph" maxlength="30" autocomplete="off"></div>
   <div class="field"><label>은행 <span class="req">*</span></label><input id="pb" maxlength="20" autocomplete="off" placeholder="예: 국민"></div>
@@ -364,14 +378,20 @@ function renderReq(){
     if(!fy)h.innerHTML=`<span class="neg">⚠ ${y}년 회계연도가 없습니다. 관리자에게 추가를 요청하세요.</span>`;
     else if(fy.locked&&!isAdmin())h.innerHTML=`<span class="neg">⚠ ${y}년은 마감되어 신청할 수 없습니다.</span>`;
     else h.innerHTML=`→ <b>${y}년</b> 회계로 등록됩니다`+(y!==S.year?` (지금 보는 화면은 ${S.year}년)`:'')};
-  const bal=()=>{if(yr()!==S.year){$('#balLine').innerHTML='';return}
+  const sumAp=()=>{const el=$('#apSum');if(!el)return;const g=ap.get(),open=$('#rap').style.display!=='none';
+    if(g.evNeed&&!open){$('#rap').style.display='';return sumAp()}
+    const t=[cn(g.cat),g.item?inm(g.item):'',g.acct?acNm(g.acct):''].filter(Boolean).map(esc).join(' / ');
+    const miss=!g.acct&&sacc('out').some(x=>x.active);
+    el.innerHTML=`<span>계정: ${miss?'<span class="neg">아직 정해지지 않았어요 — 내용을 쓰면 자동으로 골라집니다</span>':`<b>${t}</b>`}${g.event?` · 🎪 <b>${esc(evNm(g.event))}</b>`:''}${g.evNeed?' · <span class="neg">행사를 골라 주세요</span>':''}</span><button type="button" class="btn btn-ghost btn-sm" id="apTog">${open?'접기':'바꾸기'}</button>`;
+    $('#apTog').onclick=()=>{$('#rap').style.display=open?'none':'';sumAp()}};
+  const bal=()=>{sumAp();if(yr()!==S.year){$('#balLine').innerHTML='';return}
     const c=ap.get().cat,r=S.summary.find(x=>x.category_id===c&&memb(MD()).includes(x.dept_id))||{budget:0,used:0,pending:0};
     const rem=r.budget-r.used-r.pending,a=Math.max(0,(+$('#ra').value||0)-(+$('#rsp').value||0)),after=rem-a;
     $('#balLine').innerHTML=`${esc(cn(c))} 예산 ${won(r.budget)}원 / 사용·대기 ${won(+r.used+ +r.pending)}원 → 현재 잔액 <b>${won(rem)}원</b>`+(a?` · 이번 신청 후 <b class="${after<0?'neg':''}">${won(after)}원</b>${after<0?' ⚠ 예산 초과':''}`:'')};
   const autoMap=()=>{const h=$('#mapHint');const m=autoAcct($('#rdesc').value,yr()||S.year,'out');
-    if(!m.ev&&!m.it&&!m.ac){if(!manual)h.textContent='';return}
-    if(manual){h.innerHTML=`추천: ${esc(apText(m))} <button class="btn btn-ghost btn-sm" id="mapApply">적용</button>`;$('#mapApply').onclick=()=>{manual=false;ap.apply(m);bal();h.textContent='자동 선택: '+apText(m)};return}
-    ap.apply(m);bal();h.textContent='자동 선택: '+apText(m)+' (바꾸려면 아래에서 직접 선택)'};
+    if(!m.ev&&!m.it&&!m.ac&&!m.evMiss){if(!manual)h.textContent='';return}
+    if(manual){h.innerHTML=`추천: ${esc(apText(m))} <button class="btn btn-ghost btn-sm" id="mapApply">적용</button>`;$('#mapApply').onclick=()=>{manual=false;ap.apply(m);bal();h.textContent=''};return}
+    ap.apply(m);bal();h.innerHTML=(m.evMiss?`<div class="neg">⚠ ${esc(m.evMiss)}</div>`:'')};
   $('#rf').onchange=async()=>{const file=$('#rf').files[0],p=$('#rprev'),h=$('#dtHint');if(!file){p.style.display='none';h.textContent='';return}
     try{p.src=URL.createObjectURL(file);p.style.display='block'}catch(_){}
     const d=await exifDate(file);
@@ -380,7 +400,9 @@ function renderReq(){
     ap.year();yrInfo();bal()};
   $('#rdt').onchange=()=>{$('#dtHint').textContent='';ap.year();yrInfo();bal()};
   const claim=()=>{const a=+$('#ra').value||0,sp=+$('#rsp').value||0;$('#rclaim').innerHTML=sp&&sp>=a?'<span class="neg" style="font-size:13px">자부담이 영수증 금액보다 작아야 합니다</span>':won(a-sp)+'원';$('#rspnW').style.display=sp>0?'':'none'};
-  $('#ra').oninput=$('#rsp').oninput=()=>{claim();bal()};let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};yrInfo();bal();
+  $('#ra').oninput=$('#rsp').oninput=()=>{claim();bal()};
+  $('#rspOn').onchange=()=>{const on=$('#rspOn').checked;$('#rspBox').style.display=on?'':'none';if(on)$('#rsp').focus();else{$('#rsp').value='';$('#rspn').value=''}claim();bal()};
+  $('#rnOn').onchange=()=>{const on=$('#rnOn').checked;$('#rnW').style.display=on?'':'none';if(on)$('#rn').focus();else $('#rn').value=''};let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};yrInfo();bal();
   try{const m=JSON.parse(localStorage.getItem('sh_payee')||'null');if(m){$('#ph').value=m.h||'';$('#pb').value=m.b||'';$('#pa').value=m.a||''}}catch(_){}
   const pmSync=()=>{$('#payBox').style.display=document.querySelector('input[name=rpm]:checked')?.value==='card'?'none':''};
   document.querySelectorAll('input[name=rpm]').forEach(r=>r.onchange=pmSync);
@@ -437,7 +459,7 @@ async function submitReq(){
   if(!dt)return toast('지출일을 입력하세요.',true);
   if(!fy)return toast(yr+'년 회계연도가 없습니다. 관리자에게 추가를 요청하세요.',true);
   if(!amt||amt<=0)return toast('영수증 금액을 입력하세요.',true);if(sp>=amt)return toast('자부담은 영수증 금액보다 작아야 합니다.',true);if(!desc)return toast('내용을 입력하세요.',true);
-  if(!g.acct&&sacc('out').some(x=>x.active))return toast('적요(계정)를 선택하세요.',true);
+  if(!g.acct&&sacc('out').some(x=>x.active)){$('#rap').style.display='';if($('#apTog'))$('#apTog').textContent='접기';return toast('계정(적요)을 골라 주세요.',true)}if(g.evNeed)return toast('이 목에는 행사가 여러 개입니다. 어느 행사인지 골라 주세요.',true);
   const pm=document.querySelector('input[name=rpm]:checked')?.value==='card'?'card':'transfer';
   if(pm==='transfer'&&(!ph||!pb||!pa))return toast('전도금 받을 예금주·은행·계좌번호를 입력하세요.',true);
   btn.disabled=true;btn.textContent='올리는 중…';
@@ -453,7 +475,7 @@ async function submitReq(){
 
 /* ───── 지출내역 ───── */
 function renderList(){
-  const f=S.f;let rows=S.expenses.filter(e=>(!f.dept||e.event_id===+f.dept)&&(!f.status||e.status===f.status)&&(!f.mine||e.requested_by===S.me.user_id));
+  const f=S.f;let rows=S.expenses.filter(e=>(!f.dept||e.event_id===+f.dept)&&(!f.status||e.status===f.status)&&(!(f.mine||!isMoney())||e.requested_by===S.me.user_id));
   const trash=rows.filter(e=>e.deleted_at);rows=rows.filter(e=>!e.deleted_at);
   const tr=e=>{const mine=e.requested_by===S.me.user_id,a=[];
     if(e.receipt_path)a.push(`<button class="btn btn-ghost btn-sm" data-act="receipt" data-id="${e.id}">영수증</button>`);
@@ -465,13 +487,13 @@ function renderList(){
     }else if(isAdmin())a.push(`<button class="btn btn-ghost btn-sm" data-act="restore" data-id="${e.id}">복구</button>`);
     return `<tr><td class="num">${e.voucher_no??''}</td><td>${e.expense_date}</td><td>${esc(cn(e.category_id))}${e.item_id?' / '+esc(inm(e.item_id)):''}${e.acct_id?' / '+esc(acNm(e.acct_id)):e.sub_item_id?' / '+esc(snm(e.sub_item_id)):''}${e.event_id?`<div class="note">🎪 ${esc(evNm(e.event_id))}</div>`:''}</td><td>${esc(e.description)}${e.note?`<div class="note">${esc(e.note)}</div>`:''}${e.reject_reason?`<div class="note neg">반려: ${esc(e.reject_reason)}</div>`:''}</td><td class="num">${won(e.amount)}</td><td>${esc(pn(e.requested_by))}</td><td class="ctr"><span class="st st-${e.status}">${e.pay_method==='card'&&e.status==='paid'?'결제완료':ST[e.status]}</span>${e.pay_method==='card'?'<div class="note">체크카드</div>':''}</td><td style="white-space:nowrap">${a.join(' ')}</td></tr>`};
   const th='<thead><tr><th class="num">No.</th><th>지출일</th><th>항 / 목 / 적요 · 행사</th><th>내용</th><th class="num">금액</th><th>신청자</th><th>상태</th><th></th></tr></thead>';
-  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>지출내역 (${rows.length}건 · ${won(rows.filter(e=>e.status!=='rejected').reduce((s,e)=>s+ +e.amount,0))}원)</h3>
-  <div class="filters"><select id="fd"><option value="">전체 (행사 무관)</option>${(S.events||[]).map(v=>`<option value="${v.id}" ${f.dept==v.id?'selected':''}>🎪 ${esc(v.name)}</option>`).join('')}</select>
+  $('#main').innerHTML=`<div class="card"><div class="card-head"><h3>${isMoney()?'지출내역':'내 신청 내역'} (${rows.length}건 · ${won(rows.filter(e=>e.status!=='rejected').reduce((s,e)=>s+ +e.amount,0))}원)</h3>
+  <div class="filters"><select id="fd" ${isMoney()?'':'style="display:none"'}><option value="">전체 (행사 무관)</option>${(S.events||[]).map(v=>`<option value="${v.id}" ${f.dept==v.id?'selected':''}>🎪 ${esc(v.name)}</option>`).join('')}</select>
   <select id="fs"><option value="">전체 상태</option>${Object.entries(ST).map(([k,v])=>`<option value="${k}" ${f.status===k?'selected':''}>${v}</option>`).join('')}</select>
-  <label><input type="checkbox" id="fm" ${f.mine?'checked':''}> 내 신청만</label></div></div>
+  ${isMoney()?`<label><input type="checkbox" id="fm" ${f.mine?'checked':''}> 내 신청만</label>`:''}</div></div>
   <div class="tblwrap">${rows.length?`<table class="tbl">${th}<tbody>${rows.map(tr).join('')}</tbody></table>`:'<div class="empty">내역이 없습니다.</div>'}</div></div>
   ${isAdmin()&&trash.length?`<div class="card"><div class="card-head"><h3>🗑 휴지통 (${trash.length})</h3></div><div class="tblwrap"><table class="tbl">${th}<tbody>${trash.map(tr).join('')}</tbody></table></div></div>`:''}`;
-  $('#fd').onchange=e=>{S.f.dept=e.target.value;renderList()};$('#fs').onchange=e=>{S.f.status=e.target.value;renderList()};$('#fm').onchange=e=>{S.f.mine=e.target.checked;renderList()};
+  $('#fd').onchange=e=>{S.f.dept=e.target.value;renderList()};$('#fs').onchange=e=>{S.f.status=e.target.value;renderList()};if($('#fm'))$('#fm').onchange=e=>{S.f.mine=e.target.checked;renderList()};
 }
 async function act(a,id){
   const e=S.expenses.find(x=>x.id===+id);
@@ -525,7 +547,7 @@ function editModal(e){
   if(pm0==='transfer')sb.from('expense_payees').select('bank_name,account_no,account_holder').eq('expense_id',e.id).then(({data})=>{const p=(data||[])[0];
     if(p){q('#eph').value=p.account_holder;q('#epb').value=p.bank_name;q('#epa').value=p.account_no}else q('#epnote').textContent='등록된 계좌를 불러오지 못했습니다. 다시 입력해 주세요.'});
   q('#ecancel').onclick=()=>m.remove();
-  q('#esave').onclick=async()=>{const pm=pmv(),g=ap.get(),ea=+q('#ea').value||0,esp=+q('#esp').value||0;if(!ea)return toast('영수증 금액을 입력하세요.',true);if(esp>=ea)return toast('자부담은 영수증 금액보다 작아야 합니다.',true);
+  q('#esave').onclick=async()=>{const pm=pmv(),g=ap.get();if(g.evNeed)return toast('이 목에는 행사가 여러 개입니다. 어느 행사인지 골라 주세요.',true);const ea=+q('#ea').value||0,esp=+q('#esp').value||0;if(!ea)return toast('영수증 금액을 입력하세요.',true);if(esp>=ea)return toast('자부담은 영수증 금액보다 작아야 합니다.',true);
     if(pm==='transfer'&&(!q('#eph').value.trim()||!q('#epb').value.trim()||!q('#epa').value.trim()))return toast('전도금 받을 예금주·은행·계좌번호를 입력하세요.',true);
     try{await rpc('update_expense',{p_id:e.id,p_cat:g.cat,p_item:g.item,p_acct:g.acct,p_event:g.event,
       p_amount:ea-esp,p_self_pay:esp,p_self_note:esp?q('#espn').value.trim()||null:null,p_description:q('#edesc').value,p_note:q('#en').value||null,p_date:q('#edt').value,p_pay_method:pm,
@@ -914,17 +936,42 @@ async function evAct(a,id){
   }catch(_){}
 }
 
+/* ───── 할 일 (회계·관리자 첫 화면): 입금할 전도금 · 카드 결제확인 · 수입 입금확인 · 마감 ───── */
+function todoData(){
+  const E=(S.expenses||[]).filter(e=>!e.deleted_at&&canProcess(e));
+  const card=E.filter(e=>e.pay_method==='card'&&(e.status==='requested'||e.status==='approved'));
+  const fund=(S.funds||[]).filter(f=>f.status==='requested'&&(isAdmin()||hasScope(f.dept_id,f.category_id)));
+  const payN=(S.pay||[]).reduce((s,g)=>s+ +g.cnt,0),payT=(S.pay||[]).reduce((s,g)=>s+ +g.total,0);
+  return {card,fund,payN,payT,n:card.length+fund.length+payN}}
+function renderTodo(){
+  const d=todoData(),now=new Date(),last=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(),left=last-now.getDate();
+  renderPay('pay');const main=$('#main'),pc=main.firstElementChild;if(pc)pc.id='todoPay';
+  const tile=(ic,t,big,sub,go,cls)=>`<button type="button" class="todo-t ${cls||''}" data-go="${go}"><span>${ic} ${t}</span><b>${big}</b><span class="note">${sub}</span></button>`;
+  main.insertAdjacentHTML('afterbegin',`<div class="todo-grid">
+    ${tile('💸','입금할 전도금',d.payN+'건',won(d.payT)+'원','#todoPay',d.payN?'on':'')}
+    ${tile('💳','카드 결제확인',d.card.length+'건',won(d.card.reduce((s,e)=>s+ +e.amount,0))+'원','#todoCard',d.card.length?'on':'')}
+    ${tile('📥','수입 입금확인',d.fund.length+'건','예산 청구·수입','tab:fund',d.fund.length?'on':'')}
+    ${tile('📅',(now.getMonth()+1)+'월 전도금 마감',left===0?'오늘':'D-'+left,(now.getMonth()+1)+'월 '+last+'일까지','#todoPay',left<=3?'warn':'')}</div>
+    ${d.n?'':'<div class="card"><div class="card-body empty">지금 처리할 일이 없습니다. 👍</div></div>'}`);
+  const tr=e=>`<tr><td>${e.expense_date}</td><td>${esc(cn(e.category_id))}${e.item_id?' / '+esc(inm(e.item_id)):''}${e.acct_id?' / '+esc(acNm(e.acct_id)):''}${e.event_id?`<div class="note">🎪 ${esc(evNm(e.event_id))}</div>`:''}</td><td>${esc(e.description)}${e.note?`<div class="note">${esc(e.note)}</div>`:''}</td><td class="num"><b>${won(e.amount)}</b></td><td>${esc(pn(e.requested_by))}</td>
+    <td style="white-space:nowrap">${e.receipt_path?`<button class="btn btn-ghost btn-sm" data-act="receipt" data-id="${e.id}">영수증</button> `:''}<button class="btn btn-gold btn-sm" data-act="cardok" data-id="${e.id}">결제확인</button> <button class="btn btn-danger btn-sm" data-act="reject" data-id="${e.id}">반려</button>${canEditExp(e)?` <button class="btn btn-ghost btn-sm" data-act="edit" data-id="${e.id}">수정</button>`:''}</td></tr>`;
+  main.insertAdjacentHTML('beforeend',`<div class="card" id="todoCard"><div class="card-head"><h3>💳 체크카드 결제확인 (${d.card.length}건)</h3></div>
+    ${d.card.length?`<div class="tblwrap"><table class="tbl"><thead><tr><th>지출일</th><th>항 / 목 / 적요</th><th>내용</th><th class="num">금액</th><th>신청자</th><th></th></tr></thead><tbody>${d.card.map(tr).join('')}</tbody></table></div>`:'<div class="empty">확인할 카드 결제가 없습니다. 👍</div>'}
+    <div class="card-body"><p class="note">입금완료·결제확인을 누르면 승인도 함께 처리됩니다(따로 승인하지 않아도 됩니다). 잘못 올라온 신청은 [반려]하거나, 개인 결제 건은 [지출 › 지출 내역]에서 반려하세요.</p></div></div>`);
+  main.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const g=b.dataset.go;if(g.startsWith('tab:')){S.tab=g.slice(4);renderTabs();return render()}const el=main.querySelector(g);if(el)el.scrollIntoView({behavior:'smooth',block:'start'})});
+}
+
 /* ───── 메뉴 구조 ───── */
 const all=()=>true,money=()=>isMoney(),adm=()=>isAdmin();
 const MENU=[
- {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list','지출 내역'],['dash','현황'],['pay','전도금 처리',money]]},
+ {k:'m_todo',l:'할 일',vis:money,subs:[['todo','할 일']]},
+ {k:'m_exp',l:'지출',vis:all,subs:[['req','지출 신청'],['list',()=>isMoney()?'지출 내역':'내 신청 내역'],['dash','현황',money],['pay','전도금 처리',money]]},
  {k:'m_inc',l:'수입',vis:money,subs:[['income','수입 등록'],['claim','예산 청구'],['fund','내역 확인']]},
+ {k:'m_evt',l:'행사',vis:money,subs:[['events','행사 목록']]},
  {k:'m_acc',l:'계좌',vis:money,subs:[['ledger','내역 확인'],['accts','계좌 관리']]},
- {k:'m_evt',l:'행사',vis:()=>isMoney()||(S.events||[]).length>0,subs:[['events','행사 목록']]},
- {k:'m_bud',l:'예산',vis:money,subs:[['plan','예산 수립'],['borrow','부서 간 차용']]},
  {k:'m_aud',l:'감사',vis:money,subs:[['daily','일일 수지내역'],['monthly','월별 수지내역'],['settle','수지결산보고서']]},
  {k:'m_ann',l:'공지',vis:all,subs:[['annlist','공지 목록']]},
- {k:'m_set',l:'설정',vis:all,subs:[['perm','담당 회계',adm],['items','계정·적요',adm],['incitems','수입 계정항목',adm],['users','계정 관리',adm],['appr','결재란 설정',adm],['year','연도·마감',adm]]}];
+ {k:'m_set',l:'관리',vis:adm,subs:[['plan','예산 수립',adm],['perm','담당 회계',adm],['items','계정·적요',adm],['incitems','수입 계정항목',adm],['users','계정 관리',adm],['appr','결재란 설정',adm],['year','연도·마감',adm]]}];
 const subOf=m=>m.subs.filter(s=>(s[2]||m.vis)());
 const topOf=k=>MENU.find(m=>m.subs.some(s=>s[0]===k));
 function sub(fn){$('#main').innerHTML='<div id="subbody"></div>';fn()}
@@ -936,12 +983,13 @@ function badgeOf(k){
   if(k==='pay')return S.pay.length;
   if(k==='fund')return (S.funds||[]).filter(f=>f.status==='requested'&&(isAdmin()||hasScope(f.dept_id,f.category_id))).length;
   if(k==='borrow')return isAdmin()?S.borrows.filter(b=>b.status==='requested').length:0;
+  if(k==='todo')return isMoney()?todoData().n:0;
   if(k==='annlist')return unreadAnn().length;return 0}
 function renderTabs(){
   const cur=topOf(S.tab),tops=MENU.filter(m=>m.vis()&&subOf(m).length);
   $('#tabs').innerHTML=tops.map(m=>{const n=subOf(m).reduce((s,x)=>s+badgeOf(x[0]),0);return `<button class="tbtn ${cur===m?'active':''}" data-top="${m.k}">${m.l}${n?`<span class="badge">${n}</span>`:''}</button>`}).join('');
   const ss=cur?subOf(cur):[];
-  $('#subnav').innerHTML=ss.length>1?ss.map(x=>{const n=badgeOf(x[0]);return `<button class="${S.tab===x[0]?'active':''}" data-tab="${x[0]}">${x[1]}${n?`<span class="badge">${n}</span>`:''}</button>`}).join(''):'';
+  $('#subnav').innerHTML=ss.length>1?ss.map(x=>{const n=badgeOf(x[0]);return `<button class="${S.tab===x[0]?'active':''}" data-tab="${x[0]}">${typeof x[1]==='function'?x[1]():x[1]}${n?`<span class="badge">${n}</span>`:''}</button>`}).join(''):'';
   $('#subnav').style.display=ss.length>1?'flex':'none';
 }
 function render(){renderAlerts();(LEAF[S.tab]||renderDash)()}
@@ -1143,7 +1191,7 @@ async function miscAct(a,id){
     await loadStatic();await loadYear();renderTabs();render();
   }catch(_){}
 }
-const LEAF={events:renderEvents,req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderIncStatus,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,transfer:renderTransfer,
+const LEAF={todo:renderTodo,events:renderEvents,req:renderReq,list:renderList,pay:()=>renderPay('pay'),fund:renderIncStatus,income:renderIncome,inclist:renderIncList,accts:()=>renderPay('accts'),ledger:renderLedger,transfer:renderTransfer,
  plan:renderPlan,incitems:()=>sub(setInc),claim:renderClaim,borrow:renderBorrow,dash:renderDash,
  daily:renderDaily,monthly:renderMonthly,settle:renderSettle,
  annlist:renderAnn,perm:()=>sub(setPerm),items:()=>sub(setAcct),appr:()=>sub(setAppr),year:()=>sub(setYear),users:()=>sub(setUsers)};
