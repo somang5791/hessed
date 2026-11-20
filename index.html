@@ -364,11 +364,10 @@ function renderReq(){
   <div class="field"><label>청구 금액 <span class="note">(영수증 금액 − 자부담)</span></label><div id="rclaim" style="font-size:17px;font-weight:800;padding:7px 0">0원</div></div></div>
   <div class="field" id="rspnW" style="display:none"><label>자부담 내용</label><input id="rspn" maxlength="200" placeholder="예: 회비 1인당 27,000원 × 9명"></div></div>
   <div id="balLine" class="hint" style="margin:-4px 0 6px"></div>
-  ${step(4,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="(예시) 행사이름-계정이름 / 소나축-간식비"><div id="mapHint" class="hint"></div></div>
-  <div class="aplbl">계정 <span class="note">(내용을 쓰면 자동으로 골라집니다 · 바로 바꿀 수 있어요)</span></div>
+  ${step(4,'계정 · 내용')}<div class="aplbl">계정 <span class="note">(아래 내용을 쓰면 자동으로 골라집니다 · 바로 바꿀 수 있어요)</span></div>
   <div id="rap" class="apline">${apHTML('r')}</div>
-  <label class="optchk"><input type="checkbox" id="rnOn"> 비고 추가</label>
-  <div class="field" id="rnW" style="display:none"><label>비고</label><input id="rn" maxlength="200" placeholder="자세한 내용은 여기에 작성"></div>
+  <div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="(예시) 행사이름-계정이름 / 소나축-간식비"><div id="mapHint" class="hint"></div></div>
+  <div class="field"><label>비고</label><input id="rn" maxlength="200" placeholder="자세한 내용은 여기에 작성"></div>
   <div id="payBox">${step(5,'전도금 받을 계좌')}<div class="card" style="background:var(--paper)"><div class="card-body" style="padding:12px 14px">
   <div class="field" id="ppickW" style="display:none"><label>최근 사용한 계좌</label><select id="ppick"></select></div>
   <div class="grid3"><div class="field"><label>예금주 <span class="req">*</span></label><input id="ph" maxlength="30" autocomplete="off"></div>
@@ -404,7 +403,7 @@ function renderReq(){
   const claim=()=>{const a=+$('#ra').value||0,sp=+$('#rsp').value||0;$('#rclaim').innerHTML=sp&&sp>=a?'<span class="neg" style="font-size:13px">자부담이 영수증 금액보다 작아야 합니다</span>':won(a-sp)+'원';$('#rspnW').style.display=sp>0?'':'none'};
   $('#ra').oninput=$('#rsp').oninput=()=>{claim();bal()};
   $('#rspOn').onchange=()=>{const on=$('#rspOn').checked;$('#rspBox').style.display=on?'':'none';if(on)$('#rsp').focus();else{$('#rsp').value='';$('#rspn').value=''}claim();bal()};
-  $('#rnOn').onchange=()=>{const on=$('#rnOn').checked;$('#rnW').style.display=on?'':'none';if(on)$('#rn').focus();else $('#rn').value=''};let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};yrInfo();bal();
+  let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};yrInfo();bal();
   try{const m=JSON.parse(localStorage.getItem('sh_payee')||'null');if(m){$('#ph').value=m.h||'';$('#pb').value=m.b||'';$('#pa').value=m.a||''}}catch(_){}
   const pmSync=()=>{$('#payBox').style.display=document.querySelector('input[name=rpm]:checked')?.value==='card'?'none':''};
   document.querySelectorAll('input[name=rpm]').forEach(r=>r.onchange=pmSync);
