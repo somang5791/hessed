@@ -338,7 +338,11 @@ function renderReq(){
   ${step(1,'결제 방법')}<div class="grid2"><label class="pmopt"><input type="radio" name="rpm" value="transfer" checked> <b>개인 결제</b><div class="note">내 돈으로 먼저 결제 → 전도금으로 지급받기</div></label><label class="pmopt"><input type="radio" name="rpm" value="card"> <b>청년부 체크카드</b><div class="note">총괄계좌 체크카드로 결제 (지급받을 돈 없음)</div></label></div>
   ${step(2,'영수증')}<div class="field"><label>영수증 사진 <span class="req">*</span></label><input id="rf" type="file" accept="image/*"><div class="hint" style="margin-top:4px">📷 영수증 촬영 날짜가 자동으로 매핑됩니다. 당일 지출은 당일 영수증을 촬영해 주세요!</div><img id="rprev" alt="" style="display:none;max-height:140px;max-width:100%;margin-top:8px;border-radius:6px;border:1px solid var(--rule)"></div>
   ${step(3,'날짜 · 금액')}<div class="grid2"><div class="field"><label>지출일 <span class="req">*</span></label><input id="rdt" type="date" value="${new Date().toLocaleDateString('sv-SE')}"><div id="dtHint" class="hint"></div><div id="yrHint" class="hint"></div></div>
-  <div class="field"><label>금액(원) <span class="req">*</span></label><input id="ra" class="amt" type="text" inputmode="numeric" autocomplete="off"><div id="balLine" class="hint"></div></div></div>
+  <div class="field"><label>영수증 금액(원) <span class="req">*</span></label><input id="ra" class="amt" type="text" inputmode="numeric" autocomplete="off"></div></div>
+  <div class="grid2"><div class="field"><label>자부담(원) <span class="note">(있을 때만 · 회비 등)</span></label><input id="rsp" class="amt" type="text" inputmode="numeric" autocomplete="off" placeholder="없으면 비워 두세요"></div>
+  <div class="field"><label>청구 금액 <span class="note">(영수증 금액 − 자부담)</span></label><div id="rclaim" style="font-size:17px;font-weight:800;padding:7px 0">0원</div></div></div>
+  <div class="field" id="rspnW" style="display:none"><label>자부담 내용</label><input id="rspn" maxlength="200" placeholder="예: 회비 1인당 27,000원 × 9명"></div>
+  <div id="balLine" class="hint" style="margin:-4px 0 6px"></div>
   ${step(4,'내용')}<div class="field"><label>내용 <span class="req">*</span></label><input id="rdesc" maxlength="100" placeholder="(예시) 행사이름-계정이름 / 소나축-간식비"><div id="mapHint" class="hint"></div></div>
   ${step(5,'계정 (내용을 쓰면 행사·항·목·적요가 자동으로 골라집니다. 직접 바꿀 수 있어요)')}
   <div id="rap">${apHTML('r')}</div>
@@ -362,7 +366,7 @@ function renderReq(){
     else h.innerHTML=`→ <b>${y}년</b> 회계로 등록됩니다`+(y!==S.year?` (지금 보는 화면은 ${S.year}년)`:'')};
   const bal=()=>{if(yr()!==S.year){$('#balLine').innerHTML='';return}
     const c=ap.get().cat,r=S.summary.find(x=>x.category_id===c&&memb(MD()).includes(x.dept_id))||{budget:0,used:0,pending:0};
-    const rem=r.budget-r.used-r.pending,a=+$('#ra').value||0,after=rem-a;
+    const rem=r.budget-r.used-r.pending,a=Math.max(0,(+$('#ra').value||0)-(+$('#rsp').value||0)),after=rem-a;
     $('#balLine').innerHTML=`${esc(cn(c))} 예산 ${won(r.budget)}원 / 사용·대기 ${won(+r.used+ +r.pending)}원 → 현재 잔액 <b>${won(rem)}원</b>`+(a?` · 이번 신청 후 <b class="${after<0?'neg':''}">${won(after)}원</b>${after<0?' ⚠ 예산 초과':''}`:'')};
   const autoMap=()=>{const h=$('#mapHint');const m=autoAcct($('#rdesc').value,yr()||S.year,'out');
     if(!m.ev&&!m.it&&!m.ac){if(!manual)h.textContent='';return}
@@ -375,7 +379,8 @@ function renderReq(){
     else h.textContent='사진에서 날짜를 찾지 못했습니다. 영수증 날짜를 확인해 주세요.';
     ap.year();yrInfo();bal()};
   $('#rdt').onchange=()=>{$('#dtHint').textContent='';ap.year();yrInfo();bal()};
-  $('#ra').oninput=bal;let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};yrInfo();bal();
+  const claim=()=>{const a=+$('#ra').value||0,sp=+$('#rsp').value||0;$('#rclaim').innerHTML=sp&&sp>=a?'<span class="neg" style="font-size:13px">자부담이 영수증 금액보다 작아야 합니다</span>':won(a-sp)+'원';$('#rspnW').style.display=sp>0?'':'none'};
+  $('#ra').oninput=$('#rsp').oninput=()=>{claim();bal()};let tm;$('#rdesc').oninput=()=>{clearTimeout(tm);tm=setTimeout(autoMap,250)};yrInfo();bal();
   try{const m=JSON.parse(localStorage.getItem('sh_payee')||'null');if(m){$('#ph').value=m.h||'';$('#pb').value=m.b||'';$('#pa').value=m.a||''}}catch(_){}
   const pmSync=()=>{$('#payBox').style.display=document.querySelector('input[name=rpm]:checked')?.value==='card'?'none':''};
   document.querySelectorAll('input[name=rpm]').forEach(r=>r.onchange=pmSync);
@@ -426,12 +431,12 @@ function compress(file,max=1280,q=.75){return new Promise((res,rej)=>{const img=
     URL.revokeObjectURL(u);cv.toBlob(b=>b?res(b):rej(new Error('압축 실패')),'image/jpeg',q)};
   img.onerror=()=>rej(new Error('이미지를 읽을 수 없습니다. JPG/PNG 사진을 선택하세요.'));img.src=u})}
 async function submitReq(){
-  const btn=$('#reqBtn'),f=$('#rf').files[0],amt=+$('#ra').value,desc=$('#rdesc').value.trim(),ph=$('#ph').value.trim(),pb=$('#pb').value.trim(),pa=$('#pa').value.trim();
+  const btn=$('#reqBtn'),f=$('#rf').files[0],amt=+$('#ra').value,sp=+$('#rsp').value||0,desc=$('#rdesc').value.trim(),ph=$('#ph').value.trim(),pb=$('#pb').value.trim(),pa=$('#pa').value.trim();
   const dt=$('#rdt').value,yr=+String(dt).slice(0,4),fy=S.years.find(v=>v.year===yr),g=S._ap.get();
   if(!f)return toast('영수증 사진을 첨부하세요.',true);
   if(!dt)return toast('지출일을 입력하세요.',true);
   if(!fy)return toast(yr+'년 회계연도가 없습니다. 관리자에게 추가를 요청하세요.',true);
-  if(!amt||amt<=0)return toast('금액을 입력하세요.',true);if(!desc)return toast('내용을 입력하세요.',true);
+  if(!amt||amt<=0)return toast('영수증 금액을 입력하세요.',true);if(sp>=amt)return toast('자부담은 영수증 금액보다 작아야 합니다.',true);if(!desc)return toast('내용을 입력하세요.',true);
   if(!g.acct&&sacc('out').some(x=>x.active))return toast('적요(계정)를 선택하세요.',true);
   const pm=document.querySelector('input[name=rpm]:checked')?.value==='card'?'card':'transfer';
   if(pm==='transfer'&&(!ph||!pb||!pa))return toast('전도금 받을 예금주·은행·계좌번호를 입력하세요.',true);
@@ -440,7 +445,7 @@ async function submitReq(){
     const blob=await compress(f);const path=`${S.me.user_id}/${S.idem}.jpg`;
     const up=await sb.storage.from('receipts').upload(path,blob,{contentType:'image/jpeg',upsert:false});
     if(up.error&&!/exists|Duplicate/i.test(up.error.message))throw up.error;
-    await rpc('submit_expense',{p_year:yr,p_cat:g.cat,p_item:g.item,p_acct:g.acct,p_event:g.event,p_amount:amt,p_description:desc,p_note:$('#rn').value.trim()||null,p_date:dt,p_receipt_path:path,p_payee_holder:pm==='card'?null:ph,p_payee_bank:pm==='card'?null:pb,p_payee_account:pm==='card'?null:pa,p_idem:S.idem,p_pay_method:pm});
+    await rpc('submit_expense',{p_year:yr,p_cat:g.cat,p_item:g.item,p_acct:g.acct,p_event:g.event,p_amount:amt-sp,p_description:desc,p_note:$('#rn').value.trim()||null,p_date:dt,p_receipt_path:path,p_payee_holder:pm==='card'?null:ph,p_payee_bank:pm==='card'?null:pb,p_payee_account:pm==='card'?null:pa,p_idem:S.idem,p_pay_method:pm,p_self_pay:sp,p_self_note:sp?$('#rspn').value.trim()||null:null});
     if(pm==='transfer')try{if($('#pr').checked)localStorage.setItem('sh_payee',JSON.stringify({h:ph,b:pb,a:pa}));else localStorage.removeItem('sh_payee')}catch(_){}
     S.idem=null;toast(yr===S.year?'신청되었습니다.':yr+'년 회계로 신청되었습니다.');await loadYear();renderTabs();S.tab='list';S.f.mine=true;renderTabs();render();
   }catch(e){if(e&&e.message&&!e.code)toast(e.message,true);btn.disabled=false;btn.textContent='신청'}
@@ -501,7 +506,9 @@ function editModal(e){
     ${paid?'<div class="note">이미 지급·결제된 건은 결제 방법을 바꿀 수 없습니다.</div>':''}</div>
   <div class="field"><label>내용</label><input id="edesc" value="${esc(e.description)}"></div>
   <div id="eap">${apHTML('x')}</div>${!e.acct_id&&e.sub_item_id?`<p class="note">예전 적요: ${esc(snm(e.sub_item_id))} → 공통 적요를 골라 주세요.</p>`:''}
-  <div class="grid2"><div class="field"><label>금액</label><input id="ea" class="amt" type="text" inputmode="numeric" autocomplete="off" value="${e.amount}"></div><div class="field"><label>지출일</label><input id="edt" type="date" value="${e.expense_date}"></div></div>
+  <div class="grid2"><div class="field"><label>영수증 금액</label><input id="ea" class="amt" type="text" inputmode="numeric" autocomplete="off" value="${+e.amount+(+e.self_pay||0)}"></div><div class="field"><label>지출일</label><input id="edt" type="date" value="${e.expense_date}"></div></div>
+  <div class="grid2"><div class="field"><label>자부담 <span class="note">(있을 때만)</span></label><input id="esp" class="amt" type="text" inputmode="numeric" autocomplete="off" value="${+e.self_pay||''}"></div><div class="field"><label>청구 금액</label><div id="eclaim" style="font-size:16px;font-weight:800;padding:7px 0"></div></div></div>
+  <div class="field" id="espnW"><label>자부담 내용</label><input id="espn" maxlength="200" value="${esc(e.self_note||'')}" placeholder="예: 회비 1인당 27,000원 × 9명"></div>
   <div class="field"><label>비고</label><input id="en" value="${esc(e.note||'')}"></div>
   <div id="epay" class="card" style="background:var(--paper)"><div class="card-body" style="padding:10px 12px"><b style="font-size:12px">전도금 받을 계좌</b>
   <div class="grid3" style="margin-top:6px"><div class="field"><label>예금주</label><input id="eph" maxlength="30" autocomplete="off"></div>
@@ -513,13 +520,15 @@ function editModal(e){
   const ap=apWire(q('#eap'),'x',{event_id:e.event_id,category_id:e.category_id,item_id:e.item_id,acct_id:e.acct_id},()=>e.fiscal_year);
   const ps=()=>{q('#epay').style.display=pmv()==='card'?'none':''};
   m.querySelectorAll('input[name=epm]').forEach(r=>r.onchange=ps);ps();
+  const ecl=()=>{const a=+q('#ea').value||0,sp=+q('#esp').value||0;q('#eclaim').innerHTML=sp&&sp>=a?'<span class="neg" style="font-size:13px">자부담이 영수증 금액보다 작아야 합니다</span>':won(a-sp)+'원';q('#espnW').style.display=sp>0?'':'none'};
+  q('#ea').addEventListener('input',ecl);q('#esp').addEventListener('input',ecl);ecl();
   if(pm0==='transfer')sb.from('expense_payees').select('bank_name,account_no,account_holder').eq('expense_id',e.id).then(({data})=>{const p=(data||[])[0];
     if(p){q('#eph').value=p.account_holder;q('#epb').value=p.bank_name;q('#epa').value=p.account_no}else q('#epnote').textContent='등록된 계좌를 불러오지 못했습니다. 다시 입력해 주세요.'});
   q('#ecancel').onclick=()=>m.remove();
-  q('#esave').onclick=async()=>{const pm=pmv(),g=ap.get();
+  q('#esave').onclick=async()=>{const pm=pmv(),g=ap.get(),ea=+q('#ea').value||0,esp=+q('#esp').value||0;if(!ea)return toast('영수증 금액을 입력하세요.',true);if(esp>=ea)return toast('자부담은 영수증 금액보다 작아야 합니다.',true);
     if(pm==='transfer'&&(!q('#eph').value.trim()||!q('#epb').value.trim()||!q('#epa').value.trim()))return toast('전도금 받을 예금주·은행·계좌번호를 입력하세요.',true);
     try{await rpc('update_expense',{p_id:e.id,p_cat:g.cat,p_item:g.item,p_acct:g.acct,p_event:g.event,
-      p_amount:+q('#ea').value,p_description:q('#edesc').value,p_note:q('#en').value||null,p_date:q('#edt').value,p_pay_method:pm,
+      p_amount:ea-esp,p_self_pay:esp,p_self_note:esp?q('#espn').value.trim()||null:null,p_description:q('#edesc').value,p_note:q('#en').value||null,p_date:q('#edt').value,p_pay_method:pm,
       p_payee_holder:pm==='card'?null:q('#eph').value.trim(),p_payee_bank:pm==='card'?null:q('#epb').value.trim(),p_payee_account:pm==='card'?null:q('#epa').value.trim()});
       m.remove();toast('수정했습니다.');await loadYear();renderTabs();render()}catch(_){}};
 }
@@ -816,12 +825,13 @@ async function printEventSettle(only,mode){ // mode: 'row' 내역별 | 'acct' �
     const acc=ev.manager_id||mostOf(E.map(r=>xp(r)?.approved_by||xp(r)?.paid_by));
     const cell=(l,who,img)=>`<td>${img?`<img src="${esc(img)}" style="max-width:56px;max-height:30px;display:block;margin:0 auto">`:''}${esc(who||'')}</td>`;
     const sign=`<table class="ap"><tr><th>담당</th><th>회계</th><th>${esc(bz?.label||'부장집사')}</th></tr><tr>${cell('담당',dam?pn(dam):'')}${cell('회계',acc?pn(acc):'',apDamSign(acc))}${cell('부장',bz?.signer||'',bz?.sign_img||'')}</tr></table>`;
-    const ti=sum(I,'amount'),te=sum(E,'amount'),net=te-ti,plan=+ev.plan_amount||0;
+    const spOf=r=>+r.self_pay||+xp(r)?.self_pay||0,spN=r=>xp(r)?.self_note||'',rcp=r=>+r.amount+spOf(r);
+    const ti=sum(I,'amount'),te=sum(E,'amount'),ta=sum(E,rcp),tb=ta-te,net=te-ti,plan=+ev.plan_amount||0;
     // 내역: 수입 먼저, 그다음 지출 (각각 날짜순). 적요별은 같은 적요끼리 합산(날짜 칸 없음)
     let list;
     if(mode==='acct'){const g=(A,kind)=>{const m=new Map();A.forEach(r=>{const k=nm(r);if(!m.has(k))m.set(k,{kind,ac:k,rs:[]});m.get(k).rs.push(r)});return [...m.values()]};
-      list=[...g(I,'income'),...g(E,'expense')].map((x,i)=>({no:i+1,kind:x.kind,ac:x.ac,desc:[...new Set(x.rs.map(ds).filter(Boolean))].join(', '),amt:sum(x.rs,'amount'),rs:x.rs}));
-    }else list=[...I,...E].map((r,i)=>({no:i+1,kind:r.kind,dt:r.dt,ac:nm(r),desc:ds(r),amt:+r.amount,rs:[r]}));
+      list=[...g(I,'income'),...g(E,'expense')].map((x,i)=>{const b=sum(x.rs,spOf);return {no:i+1,kind:x.kind,ac:x.ac,desc:[...new Set(x.rs.map(ds).filter(Boolean))].join(', ')+(b?` (자부담 ${won(b)}원)`:''),amt:sum(x.rs,r=>r.kind==='expense'?rcp(r):+r.amount),rs:x.rs}});
+    }else list=[...I,...E].map((r,i)=>{const b=r.kind==='expense'?spOf(r):0;return {no:i+1,kind:r.kind,dt:r.dt,ac:nm(r),desc:ds(r)+(b?` (자부담 ${won(b)}원${spN(r)?' · '+spN(r):''})`:''),amt:b?rcp(r):+r.amount,rs:[r]}});
     const A=mode==='acct';
     const tr=list.map(x=>`<tr><td class="c">${x.no}</td>${A?'':`<td class="c">${esc(x.dt)}</td>`}<td>${esc(x.ac)}</td><td>${esc(x.desc)}</td><td class="n">${x.kind==='income'?won(x.amt):''}</td><td class="n">${x.kind==='expense'?won(x.amt):''}</td></tr>`).join('')
       ||`<tr><td colspan="${A?5:6}" class="c">승인·지급된 내역이 없습니다.</td></tr>`;
@@ -836,12 +846,13 @@ async function printEventSettle(only,mode){ // mode: 'row' 내역별 | 'acct' �
     <table class="rt" style="margin-bottom:4px"><tr><th>계획 예산</th><td class="n">${plan?won(plan):'-'}</td><th>행사 순비용<div style="font-weight:400;font-size:7.5pt">(지출 − 수입)</div></th><td class="n">${won(net)}</td><th>잔 액</th><td class="n">${plan?won(plan-net):'-'}</td></tr></table>
     <table class="rt"><colgroup>${(A?[7,20,47,13,13]:[6,12,17,39,13,13]).map(w=>`<col style="width:${w}%">`).join('')}</colgroup>
     <tr><th>No.</th>${A?'':'<th>날짜</th>'}<th>적요</th><th>내용</th><th>수입</th><th>지출</th></tr>${tr}
-    <tr class="sum"><td colspan="${A?3:4}" class="c">합 계</td><td class="n">${won(ti)}</td><td class="n">${won(te)}</td></tr></table>
+    <tr class="sum"><td colspan="${A?3:4}" class="c">${tb?'비용 합 (A)':'합 계'}</td><td class="n">${won(ti)}</td><td class="n">${won(tb?ta:te)}</td></tr>
+    ${tb?`<tr><td colspan="${A?3:4}" class="c">자부담 (B)</td><td></td><td class="n">− ${won(tb)}</td></tr><tr class="sum"><td colspan="${A?3:4}" class="c">청구할 금액 (A − B)</td><td></td><td class="n">${won(te)}</td></tr>`:''}</table>
     <div class="evsec">■ 정산받을 계좌정보</div>
     <table class="rt"><colgroup><col style="width:22%"><col style="width:34%"><col style="width:20%"><col style="width:24%"></colgroup><tr><th>은행</th><th>계좌번호</th><th>예금주</th><th>금액</th></tr>${payTr}</table>
     <div class="rnote">(단위: 원, 승인·지급 기준) 행사 회계: ${esc(ev.manager_id?pn(ev.manager_id):'-')} · 상태: ${ev.status==='closed'?'마감':'진행 중'}${card?` · 청년부 체크카드 결제 ${won(card)}원은 총괄계좌에서 이미 출금되어 정산 금액에서 뺐습니다.`:''}</div></div>`);
     // 영수증 첨부: 지출 순번대로 장당 4개
-    const rc=list.filter(x=>x.kind==='expense').flatMap(x=>x.rs.map((r,j)=>({no:x.rs.length>1?`${x.no}-${j+1}`:String(x.no),ac:x.ac,amt:+r.amount,img:urls[r.ref_id]||'',has:!!r.receipt_path})));
+    const rc=list.filter(x=>x.kind==='expense').flatMap(x=>x.rs.map((r,j)=>({no:x.rs.length>1?`${x.no}-${j+1}`:String(x.no),ac:x.ac,amt:rcp(r),img:urls[r.ref_id]||'',has:!!r.receipt_path})));
     for(let i=0;i<rc.length;i+=4){
       const q=rc.slice(i,i+4);while(q.length<4)q.push(null);
       pages.push(`<div class="pg rcpg"><div class="rch">${esc(ev.name)} — 영수증 첨부${rc.length>4?` (${i/4+1}/${Math.ceil(rc.length/4)})`:''}</div><div class="rcgrid">${q.map(x=>x?`<div class="rcc"><table><colgroup><col style="width:22%"><col style="width:44%"><col style="width:34%"></colgroup><tr><th>번호</th><th>적요</th><th>금액</th></tr><tr><td>${esc(x.no)}</td><td>${esc(x.ac)}</td><td>${won(x.amt)}원</td></tr></table><div class="ri">${x.img?`<img src="${esc(x.img)}">`:`<span>${x.has?'영수증을 불러오지 못했습니다':'영수증 없음'}</span>`}</div></div>`:'<div></div>').join('')}</div></div>`);
@@ -1252,7 +1263,7 @@ function resHTML(e,img,py){
   const pay=e.payText?`<tr><th>결 제</th><td colspan="5">${esc(e.payText)}</td></tr>`:e.pay_method==='card'?`<tr><th>결 제</th><td colspan="5">청년부 체크카드 결제 (총괄계좌 출금)</td></tr>`
     :`<tr><th>계좌번호</th><td>${esc(py?.account_no||'')}</td><th>은 행</th><td>${esc(py?.bank_name||'')}</td><th>예금주</th><td>${esc(py?.account_holder||'')}</td></tr>`;
   return `<div class="pg resv"><div class="rhead"><div><div class="rtitle" style="text-align:left">지 출 결 의 서</div><div>소망교회 청년회 HESSED</div>${e.voucher_no?`<div style="margin-top:4px;font-weight:700">전표번호 : ${e.fiscal_year?e.fiscal_year+'-':''}${e.voucher_no}</div>`:''}</div>${signHTML('expense',e.dept_id,{who:e.approved_by||e.paid_by||null})}</div>
-  <table class="res">${row('일 자',esc(e.dt)+(e.dt?' ('+'일월화수목금토'[new Date(e.dt+'T00:00:00').getDay()]+')':''))}<tr><th>항</th><td>${esc(cn(e.category_id))}</td><th>목</th><td>${esc(e.item_id?inm(e.item_id):'')}${e.event_id?`<div style="font-size:9pt;color:#555">행사: ${esc(evNm(e.event_id))}</div>`:''}</td><th>계정(적요)</th><td>${esc(e.acct_id?acNm(e.acct_id):e.sub_item_id?snm(e.sub_item_id):'')}</td></tr><tr><th>내 용</th><td>${esc(e.desc)}</td><th>비 고</th><td colspan="3">${esc(e.note||'')}</td></tr>${row('금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${pay}</table>
+  <table class="res">${row('일 자',esc(e.dt)+(e.dt?' ('+'일월화수목금토'[new Date(e.dt+'T00:00:00').getDay()]+')':''))}<tr><th>항</th><td>${esc(cn(e.category_id))}</td><th>목</th><td>${esc(e.item_id?inm(e.item_id):'')}${e.event_id?`<div style="font-size:9pt;color:#555">행사: ${esc(evNm(e.event_id))}</div>`:''}</td><th>계정(적요)</th><td>${esc(e.acct_id?acNm(e.acct_id):e.sub_item_id?snm(e.sub_item_id):'')}</td></tr><tr><th>내 용</th><td>${esc(e.desc)}</td><th>비 고</th><td colspan="3">${esc(e.note||'')}</td></tr>${+e.self_pay?`<tr><th>영수증 금액</th><td>${won(+e.amount+ +e.self_pay)}원</td><th>자부담</th><td colspan="3">${won(e.self_pay)}원${e.self_note?' ('+esc(e.self_note)+')':''}</td></tr>`:''}${row(+e.self_pay?'청구 금액':'금 액',`일금 ${amtToKor(e.amount)}원정 (₩ ${won(e.amount)})`,' style="font-size:13pt;font-weight:700"')}${pay}</table>
   <div class="rcpt">${img?`<div class="rcap">▼ 영수증</div><img src="${esc(img)}">`:'<div style="margin:auto;color:#999">영수증 붙이는 곳</div>'}</div>
   <div class="rnote">주) 1. 비용집행시 영수증 1매당 사용 양식 2. 비용집행에 따른 증빙처리(6하원칙)를 잘해주시기 바랍니다. 3. 개인카드사용, 개인용도로 사용은 엄하게 금지합니다.</div></div>`}
 async function printResolutions(list){
@@ -1263,10 +1274,10 @@ async function printResolutions(list){
   const urls=await Promise.all(list.map(e=>receiptUrl(e.receipt_path)));
   printPages(list.map((e,i)=>resHTML(e,urls[i],py[e.id])).join(''),{res:true,title:'지출결의서'});
 }
-const resOf=e=>({id:e.id,voucher_no:e.voucher_no,fiscal_year:e.fiscal_year,dt:e.expense_date,dept_id:e.dept_id,category_id:e.category_id,item_id:e.item_id,sub_item_id:e.sub_item_id,desc:e.description,amount:e.amount,note:e.note,receipt_path:e.receipt_path,requester:e.requested_by,pay_method:e.pay_method,acct_id:e.acct_id,event_id:e.event_id,approved_by:e.approved_by,paid_by:e.paid_by});
+const resOf=e=>({id:e.id,voucher_no:e.voucher_no,fiscal_year:e.fiscal_year,dt:e.expense_date,dept_id:e.dept_id,category_id:e.category_id,item_id:e.item_id,sub_item_id:e.sub_item_id,desc:e.description,amount:e.amount,note:e.note,receipt_path:e.receipt_path,requester:e.requested_by,pay_method:e.pay_method,acct_id:e.acct_id,event_id:e.event_id,approved_by:e.approved_by,paid_by:e.paid_by,self_pay:+e.self_pay||0,self_note:e.self_note});
 const resOfRow=r=>{const e=S.expenses.find(x=>x.id===r.ref_id);if(e)return resOf(e);
   const pn0=acNm(r.acct_id)||snm(r.sub_item_id),pre=pn0?pn0+' · ':'';const d=String(r.summary||'');
-  return {id:r.ref_id,dt:r.dt,dept_id:r.dept_id,category_id:r.category_id,item_id:r.item_id,sub_item_id:r.sub_item_id,acct_id:r.acct_id,event_id:r.event_id,desc:pre&&d.startsWith(pre)?d.slice(pre.length):d,amount:r.amount,note:r.note,receipt_path:r.receipt_path,requester:r.requester}};
+  return {id:r.ref_id,dt:r.dt,dept_id:r.dept_id,category_id:r.category_id,item_id:r.item_id,sub_item_id:r.sub_item_id,acct_id:r.acct_id,event_id:r.event_id,desc:pre&&d.startsWith(pre)?d.slice(pre.length):d,amount:r.amount,note:r.note,receipt_path:r.receipt_path,requester:r.requester,self_pay:+r.self_pay||0}};
 function printExpense(e){printResolutions([resOf(e)])}
 
 /* ── 수입 계정항목 설정 ── */
